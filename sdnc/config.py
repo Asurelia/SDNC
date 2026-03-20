@@ -45,6 +45,17 @@ class SDNCConfig:
     # Temporal integrator
     integrator_state_dim: int = 64
 
+    # Predictive coding
+    prediction_error_weight: float = 1.0     # weight of prediction error in learning
+    prediction_hebbian_lr: float = 5e-4      # Hebbian LR driven by prediction error
+
+    # Global state (contextual prior)
+    global_state_slots: int = 8              # number of memory slots in global state
+    global_state_decay: float = 0.995        # gradual forgetting rate
+
+    # Temporal stream
+    temporal_history_len: int = 16           # circular buffer size (last N inputs)
+
     # Memory
     memory_capacity: int = 10000
     salience_threshold: float = 0.7

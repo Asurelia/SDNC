@@ -1,1 +1,1 @@
-"""Core SDNC components: micro-circuits, routing, Hebbian learning."""
+"""Core SDNC components: predictive circuits, routing, Hebbian learning, global state."""
