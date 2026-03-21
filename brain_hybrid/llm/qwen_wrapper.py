@@ -2,7 +2,25 @@ import os
 os.environ["PYTORCH_ATTENTION_BACKEND"] = "math"
 os.environ["TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL"] = "0"
 
-from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor
+from transformers import AutoProcessor
+import importlib
+
+def _get_model_class():
+    """Auto-detect Qwen VL model class available in transformers."""
+    try:
+        mod = importlib.import_module("transformers")
+        # Qwen3-VL (latest)
+        if hasattr(mod, "Qwen3VLForConditionalGeneration"):
+            return mod.Qwen3VLForConditionalGeneration
+        # Qwen2.5-VL (fallback)
+        if hasattr(mod, "Qwen2_5_VLForConditionalGeneration"):
+            return mod.Qwen2_5_VLForConditionalGeneration
+        # Generic fallback
+        from transformers import AutoModelForVision2Seq
+        return AutoModelForVision2Seq
+    except Exception:
+        from transformers import AutoModelForVision2Seq
+        return AutoModelForVision2Seq
 import torch
 
 
@@ -61,7 +79,9 @@ class QwenWrapper:
             max_pixels=1024 * 28 * 28,
         )
 
-        self.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+        model_class = _get_model_class()
+        print(f"  Classe modèle : {model_class.__name__}")
+        self.model = model_class.from_pretrained(
             model_name,
             **load_kwargs
         )
@@ -139,12 +159,12 @@ class QwenWrapper:
         """
         Extrait les représentations internes aux couches demandées.
 
-        layers : liste d'indices (0=embeddings, 1-28=layers)
+        layers : liste d'indices (0=embeddings, 1-36=layers)
         image  : PIL.Image, path str, ou None
-        Retourne : liste de tenseurs (1, seq_len, 3584)
+        Retourne : liste de tenseurs (1, seq_len, 4096)
         """
         if layers is None:
-            layers = [7, 14, 21, 28]
+            layers = [9, 18, 27, 36]
 
         inputs = self._prepare_inputs(prompt, image)
 
