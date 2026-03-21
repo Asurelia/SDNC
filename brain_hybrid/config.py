@@ -5,10 +5,10 @@ from typing import List
 @dataclass
 class BrainConfig:
     # LLM
-    model_name: str = "Qwen/Qwen3-4B"
-    llm_hidden_dim: int = 2560           # Qwen3-4B hidden size
+    model_name: str = "Qwen/Qwen2.5-VL-7B-Instruct"
+    llm_hidden_dim: int = 3584           # Qwen2.5-VL-7B hidden size
     intercept_layers: List[int] = field(
-        default_factory=lambda: [8, 16, 24, 36]
+        default_factory=lambda: [7, 14, 21, 28]
     )
 
     # Modules CfC+SNN
@@ -27,3 +27,6 @@ class BrainConfig:
 
     # État global
     state_dim: int = 512
+
+    # Quantization — bitsandbytes Q8 (Colab/Linux only, ignored on Windows/ROCm)
+    use_quantization: bool = True

@@ -28,7 +28,10 @@ class BrainHybridModel(nn.Module):
         self.config = config or BrainConfig()
 
         # Noyau LLM — gelé
-        self.llm = QwenWrapper(self.config.model_name)
+        self.llm = QwenWrapper(
+            self.config.model_name,
+            use_quantization=self.config.use_quantization,
+        )
         self.device = self.llm.device
 
         # 4 modules CfC+SNN aux points d'intercept
@@ -67,14 +70,18 @@ class BrainHybridModel(nn.Module):
         self.error_history = []
         self.step_count = 0
 
-    def forward(self, prompt: str, learn: bool = True) -> dict:
+    def forward(self, prompt: str, image=None, learn: bool = True) -> dict:
         """
         Traitement complet d'un input avec apprentissage STDP optionnel.
+
+        prompt : texte
+        image  : PIL.Image, path str, ou None (texte seul)
         """
         # Extraire les représentations internes du Qwen
         layer_reps = self.llm.get_layer_representations(
             prompt,
-            layers=self.config.intercept_layers
+            layers=self.config.intercept_layers,
+            image=image,
         )
 
         errors = []
@@ -132,7 +139,7 @@ class BrainHybridModel(nn.Module):
             )
 
         # Générer la réponse avec le Qwen
-        response = self.llm.generate(prompt)
+        response = self.llm.generate(prompt, image=image)
 
         return {
             'response': response,
