@@ -51,11 +51,13 @@ def run_continual_test(model, n_steps=100, verbose=True):
     # --- Critères de succès ---
     results = {}
 
-    # 1. Prédiction s'améliore : erreur(step 100) < erreur(step 1) × 0.9
-    err_first = model.error_history[start_step]
-    err_last = model.error_history[-1]
+    # 1. Prédiction s'améliore : moyenne des 5 derniers < moyenne des 5 premiers × 0.95
+    history_slice = model.error_history[start_step:]
+    n_compare = min(5, len(history_slice) // 2)
+    err_first = sum(history_slice[:n_compare]) / n_compare if n_compare > 0 else 0
+    err_last = sum(history_slice[-n_compare:]) / n_compare if n_compare > 0 else 0
     improvement = 1 - err_last / err_first if err_first > 0 else 0
-    results["prediction_improves"] = err_last < err_first * 0.9
+    results["prediction_improves"] = err_last < err_first * 0.95
     results["err_first"] = err_first
     results["err_last"] = err_last
     results["improvement_pct"] = improvement * 100

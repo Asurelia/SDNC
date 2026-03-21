@@ -18,7 +18,7 @@ class BrainConfig:
     # STDP
     stdp_lr_plus: float = 0.01
     stdp_lr_minus: float = 0.01
-    dopamine_threshold: float = 0.3      # seuil de saillance
+    dopamine_threshold: float = 1.5      # seuil de saillance (adapté aux erreurs ~1.4)
 
     # Hippocampe
     memory_address_dim: int = 256
