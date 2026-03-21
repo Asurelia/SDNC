@@ -17,14 +17,22 @@ class QwenWrapper:
     """
 
     def __init__(self, model_name: str = "Qwen/Qwen3-4B"):
-        print(f"Chargement {model_name} en bfloat16...")
+        # T4 (compute 7.5) ne supporte pas bfloat16 → float16
+        # Ampere+ (compute 8.0+) et AMD ROCm → bfloat16
+        if torch.cuda.is_available():
+            cap = torch.cuda.get_device_capability(0)
+            use_dtype = torch.bfloat16 if cap[0] >= 8 else torch.float16
+        else:
+            use_dtype = torch.float32
+        print(f"Chargement {model_name} en {use_dtype}...")
+
         self.tokenizer = AutoTokenizer.from_pretrained(
             model_name,
             trust_remote_code=True
         )
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name,
-            dtype=torch.bfloat16,
+            dtype=use_dtype,
             device_map="auto",
             trust_remote_code=True,
             attn_implementation="eager"
