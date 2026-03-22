@@ -48,7 +48,9 @@ class ACCModule(nn.Module):
         self.lr = lr
 
         # Input = n_modules erreurs + n_modules dopamines + 1 entropie
-        input_dim = n_modules * 2 + 1
+        # Note : errors peut avoir n_modules-1 éléments, on padde à n_modules
+        self.n_modules = n_modules
+        input_dim = n_modules + n_modules + 1
 
         self.fc1 = nn.Linear(input_dim, 32).to(self.device)
         self.fc2 = nn.Linear(32, 32).to(self.device)
@@ -73,8 +75,14 @@ class ACCModule(nn.Module):
         dopamine_signals  : liste de floats (un par stdp_learner)
         action_entropy    : float (0.0 si pas disponible)
         """
-        # Construire le vecteur d'entrée
-        input_vals = list(prediction_errors) + list(dopamine_signals) + [action_entropy]
+        # Construire le vecteur d'entrée — padder les erreurs à n_modules
+        errs = list(prediction_errors)
+        while len(errs) < self.n_modules:
+            errs.append(errs[-1] if errs else 0.0)
+        dops = list(dopamine_signals)
+        while len(dops) < self.n_modules:
+            dops.append(dops[-1] if dops else 0.0)
+        input_vals = errs[:self.n_modules] + dops[:self.n_modules] + [action_entropy]
         x = torch.tensor(input_vals, dtype=torch.float32, device=self.device)
 
         # Forward MLP
