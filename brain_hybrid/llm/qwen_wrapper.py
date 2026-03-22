@@ -197,3 +197,47 @@ class QwenWrapper:
 
         new_tokens = out[0][input_len:]
         return self.processor.decode(new_tokens, skip_special_tokens=True)
+
+    def generate_with_brain(
+        self,
+        prompt: str,
+        brain_modules,
+        injection_gates,
+        hook_manager,
+        hippocampal_prefix=None,
+        image=None,
+        max_new_tokens: int = 256,
+        **kwargs
+    ) -> str:
+        """
+        Génération avec injection CfC via forward hooks.
+
+        Les hooks modifient les hidden states du Qwen pendant la génération
+        pour que le cerveau CfC influence les réponses.
+        """
+        inputs = self._prepare_inputs(prompt, image)
+        input_len = inputs["input_ids"].shape[1]
+
+        # Indices des couches (0-indexed) pour les hooks
+        layer_indices = [l - 1 for l in [9, 18, 27, 36]]
+
+        # Enregistrer les hooks
+        hook_manager.register_hooks(
+            self.model, brain_modules, injection_gates, layer_indices
+        )
+
+        try:
+            with torch.no_grad():
+                out = self.model.generate(
+                    **inputs,
+                    max_new_tokens=max_new_tokens,
+                    do_sample=True,
+                    temperature=0.7,
+                    **kwargs
+                )
+        finally:
+            # Toujours supprimer les hooks, même en cas d'erreur
+            hook_manager.remove_hooks()
+
+        new_tokens = out[0][input_len:]
+        return self.processor.decode(new_tokens, skip_special_tokens=True)

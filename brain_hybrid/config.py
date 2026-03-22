@@ -30,3 +30,10 @@ class BrainConfig:
 
     # Quantization — bitsandbytes Q8 (Colab/Linux only, ignored on Windows/ROCm)
     use_quantization: bool = True
+
+    # Injection CfC → Qwen
+    injection_enabled: bool = True
+    injection_gate_rank: int = 16          # dimension low-rank projection
+    injection_init_alpha: float = 0.001    # force initiale du gate
+    injection_max_alpha: float = 0.1       # force maximale
+    injection_n_prefix_tokens: int = 4     # tokens virtuels hippocampe
