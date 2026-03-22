@@ -303,6 +303,142 @@ class BrainHybridModel(nn.Module):
                     gate.alpha.data *= 0.95
                     gate.alpha.data.clamp_(min=1e-5)
 
+    def forward_with_external_reps(
+        self,
+        layer_reps: list,
+        prompt: str = "",
+        learn: bool = True,
+    ) -> dict:
+        """
+        Forward avec des représentations externes (distillation teacher).
+
+        Identique à forward() mais saute l'extraction Qwen et utilise
+        les layer_reps fournies directement. Utilisé par le pipeline
+        de distillation pour injecter les représentations projetées du teacher.
+
+        Args:
+            layer_reps: Liste de tenseurs (1, seq_len, hidden_dim) aux
+                        couches d'intercept, fournis par le pipeline.
+            prompt: Prompt original (pour la génération et l'hippocampe).
+            learn: Active l'apprentissage local (STDP, PC, hippocampe).
+
+        Returns:
+            dict identique à forward().
+        """
+        # 1. Scheduler step
+        self.scheduler.step()
+        step = self.scheduler.global_step
+
+        # 2. Codage prédictif hiérarchique
+        pc_errors = self.pc.forward(layer_reps)
+
+        # 3. BrainModules + STDP
+        errors = []
+        for i, (module, stdp) in enumerate(
+            zip(self.brain_modules, self.stdp_learners)
+        ):
+            prediction, spikes = module(layer_reps[i])
+
+            if i < len(layer_reps) - 1:
+                error = module.compute_prediction_error(
+                    prediction, layer_reps[i + 1]
+                )
+                error_val = error.abs().mean().item()
+                errors.append(error_val)
+
+                stdp.update_dopamine(error_val, self.config.dopamine_threshold)
+
+                if learn and module.pre_trace is not None:
+                    if self.scheduler.should_update("cfc", step):
+                        for param in module.cfc.parameters():
+                            if param.requires_grad and len(param.shape) == 2:
+                                stdp.apply(param, module.pre_trace, module.post_trace)
+
+        # PC update
+        if learn and self.scheduler.should_update("cfc", step):
+            dopamine_vals = [s.dopamine_signal for s in self.stdp_learners]
+            self.pc.update_all(pc_errors, dopamine_vals, self.stdp_learners)
+
+        # 4. ACC — détection de conflit
+        dopamine_list = [s.dopamine_signal for s in self.stdp_learners]
+        acc_output = self.acc.forward(errors, dopamine_list)
+
+        if acc_output.is_conflict:
+            self.scheduler.arousal_boost()
+
+        # État global
+        mean_error = sum(errors) / len(errors) if errors else 0.0
+        self.error_history.append(mean_error)
+        self.step_count += 1
+
+        last_rep_mean = layer_reps[-1].float().mean(dim=1).squeeze().detach()
+        if last_rep_mean.shape[0] >= self.config.state_dim:
+            last_rep_mean = last_rep_mean[:self.config.state_dim]
+        self.global_state = (
+            0.95 * self.global_state +
+            0.05 * last_rep_mean.to(self.device)
+        )
+
+        # 5. Génération (utilise le student LLM normalement)
+        gen_prompt = prompt
+        if acc_output.is_conflict and self.scheduler.should_update("qwen", step):
+            gen_prompt = acc_output.conflict_prompt_fragment + prompt
+
+        if prompt and self.config.injection_enabled:
+            response = self.llm.generate_with_brain(
+                gen_prompt,
+                brain_modules=self.brain_modules,
+                injection_gates=self.injection_gates,
+                hook_manager=self.hook_manager,
+            )
+        elif prompt:
+            response = self.llm.generate(gen_prompt)
+        else:
+            response = ""
+
+        # 6. Hippocampe
+        if learn and self.scheduler.should_update("hippocampus", step):
+            if acc_output.conflict_score > self.config.salience_threshold:
+                self.hippocampus.write(
+                    embedding=layer_reps[0].mean(dim=1).squeeze(),
+                    content=layer_reps[-1].mean(dim=1).squeeze(),
+                    metadata={
+                        'step': self.step_count,
+                        'prompt': prompt[:100] if prompt else 'distillation',
+                        'error': mean_error,
+                        'conflict': acc_output.conflict_score,
+                    }
+                )
+
+        # 7. Sleep
+        sleep_triggered = False
+        if learn and self.scheduler.should_update("sleep", step):
+            sleep_triggered = self._sleep_consolidation()
+
+        if learn:
+            self._adjust_gates()
+
+        if HW_CONFIG.get("empty_cache_after_qwen") and torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+        return {
+            'response': response,
+            'prediction_errors': errors,
+            'mean_error': mean_error,
+            'dopamine': dopamine_list,
+            'memories_stored': len(self.hippocampus.metadata),
+            'global_state_norm': self.global_state.norm().item(),
+            'gate_alphas': [g.alpha.item() for g in self.injection_gates],
+            'conflict_score': acc_output.conflict_score,
+            'is_conflict': acc_output.is_conflict,
+            'acc_trend': self.acc.trend(),
+            'pc_errors': self.pc.get_errors(),
+            'pc_precision': self.pc.get_precisions(),
+            'scheduler_phase': self.scheduler.get_phase(),
+            'sleep_triggered': sleep_triggered,
+            'step': self.step_count,
+        }
+
     def remember(self, query: str) -> torch.Tensor:
         """Interroge l'hippocampe."""
         query_reps = self.llm.get_layer_representations(

@@ -35,14 +35,21 @@ def _can_use_bnb() -> bool:
 
 class QwenWrapper:
     """
-    Wrapper Qwen2.5-VL-7B avec accès aux représentations internes.
+    Wrapper Qwen avec accès aux représentations internes.
 
-    Supporte texte seul et texte + image.
+    Supporte :
+      - Modèles VL (Vision-Language) : texte + image
+      - Modèles text-only (causal LM) : texte seul (ex: Qwen3.5-4B)
+
+    Auto-détection basée sur le nom du modèle (présence de "VL"/"vl").
     Gelé définitivement — aucun poids ne sera jamais modifié.
     """
 
     def __init__(self, model_name: str = "Qwen/Qwen2.5-VL-7B-Instruct",
                  use_quantization: bool = True):
+        # Détection automatique : VL vs text-only
+        self._is_vl = "VL" in model_name or "vl" in model_name
+
         # Dtype : bfloat16 sur Ampere+/ROCm, float16 sur T4
         if torch.cuda.is_available():
             cap = torch.cuda.get_device_capability(0)
@@ -59,9 +66,10 @@ class QwenWrapper:
 
         if use_quantization and _can_use_bnb():
             from transformers import BitsAndBytesConfig
+            skip_modules = ["lm_head", "visual"] if self._is_vl else ["lm_head"]
             load_kwargs["quantization_config"] = BitsAndBytesConfig(
                 load_in_8bit=True,
-                llm_int8_skip_modules=["lm_head", "visual"],
+                llm_int8_skip_modules=skip_modules,
             )
             load_kwargs["torch_dtype"] = use_dtype
             print(f"Chargement {model_name} en Q8 ({use_dtype})...")
@@ -72,19 +80,33 @@ class QwenWrapper:
             else:
                 print(f"Chargement {model_name} en {use_dtype}...")
 
-        self.processor = AutoProcessor.from_pretrained(
-            model_name,
-            trust_remote_code=True,
-            min_pixels=256 * 28 * 28,
-            max_pixels=1024 * 28 * 28,
-        )
+        if self._is_vl:
+            # Mode VL : AutoProcessor + modèle VL
+            self.processor = AutoProcessor.from_pretrained(
+                model_name,
+                trust_remote_code=True,
+                min_pixels=256 * 28 * 28,
+                max_pixels=1024 * 28 * 28,
+            )
+            model_class = _get_model_class()
+            print(f"  Classe modèle : {model_class.__name__}")
+            self.model = model_class.from_pretrained(
+                model_name,
+                **load_kwargs
+            )
+        else:
+            # Mode text-only : AutoTokenizer + AutoModelForCausalLM
+            from transformers import AutoTokenizer, AutoModelForCausalLM
+            self.processor = AutoTokenizer.from_pretrained(
+                model_name,
+                trust_remote_code=True,
+            )
+            print(f"  Mode text-only (causal LM)")
+            self.model = AutoModelForCausalLM.from_pretrained(
+                model_name,
+                **load_kwargs
+            )
 
-        model_class = _get_model_class()
-        print(f"  Classe modèle : {model_class.__name__}")
-        self.model = model_class.from_pretrained(
-            model_name,
-            **load_kwargs
-        )
         self.model.eval()
 
         # Geler TOUS les poids — non négociable
@@ -107,8 +129,19 @@ class QwenWrapper:
         prompt : texte
         image  : PIL.Image, path str, ou None (texte seul)
         """
+        if not self._is_vl:
+            # Mode text-only — tokenisation directe
+            inputs = self.processor(
+                prompt,
+                return_tensors="pt",
+                padding=True,
+                truncation=True,
+                max_length=2048,
+            )
+            return {k: v.to(self.device) for k, v in inputs.items()}
+
+        # Mode VL — messages structurés
         if image is not None:
-            # Texte + image
             if isinstance(image, str):
                 from PIL import Image
                 image = Image.open(image).convert("RGB")
@@ -120,7 +153,6 @@ class QwenWrapper:
                 ]
             }]
         else:
-            # Texte seul
             messages = [{
                 "role": "user",
                 "content": [
