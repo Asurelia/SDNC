@@ -37,3 +37,22 @@ class BrainConfig:
     injection_init_alpha: float = 0.001    # force initiale du gate
     injection_max_alpha: float = 0.1       # force maximale
     injection_n_prefix_tokens: int = 4     # tokens virtuels hippocampe
+
+    # ACC — Cortex Cingulaire Antérieur
+    acc_conflict_threshold: float = 0.7
+    acc_exploration_threshold: float = 0.4
+    acc_lr: float = 0.001
+
+    # StepScheduler — rythmes cérébraux
+    snn_freq: int = 1           # SNN : chaque step
+    cfc_freq: int = 10          # CfC : tous les 10 steps
+    hippocampus_freq: int = 6   # SDM : phase thêta simulée
+    qwen_freq: int = 100        # Qwen enrichi : rare, coûteux
+    sleep_freq: int = 5000      # consolidation offline
+    arousal_boost_steps: int = 50
+
+    # Predictive Coding
+    pc_lr: float = 0.001
+
+    # Sleep
+    sleep_replay_count: int = 10
