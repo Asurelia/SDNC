@@ -38,7 +38,7 @@ class PredictiveCodingLayer:
         actual    : hidden states réels de la couche
         predicted : prédiction top-down depuis la couche supérieure
         """
-        self.error = actual.float() - predicted.float()
+        self.error = actual.to(predicted.device).float() - predicted.float()
         self.precision = 1.0 / (self.error.var().item() + 1e-8)
         return self.error
 

@@ -25,11 +25,13 @@ def test_no_conflict_low_errors():
 
 
 def test_acc_weights_change():
-    """Les poids doivent changer après update Hebbian."""
+    """Les poids doivent changer après update Hebbian avec inputs variés."""
     acc = ACCModule(n_modules=4)
     w_before = acc.fc1.weight.data.clone()
-    for _ in range(10):
-        acc.forward([0.5, 0.5, 0.5, 0.5], [0.5, 0.5, 0.5, 0.5])
+    for i in range(20):
+        errs = [0.1 * (i % 5 + 1)] * 4
+        dops = [0.2 * (i % 3 + 1)] * 4
+        acc.forward(errs, dops)
     w_after = acc.fc1.weight.data
     assert not torch.allclose(w_before, w_after), "Poids ACC inchangés"
 
