@@ -8,7 +8,7 @@ class BrainConfig:
     model_name: str = "Qwen/Qwen3-VL-8B-Instruct"
     llm_hidden_dim: int = 4096           # Qwen3-VL-8B hidden size
     intercept_layers: List[int] = field(
-        default_factory=lambda: [9, 18, 27, 36]
+        default_factory=lambda: [8, 16, 24, 32]
     )
 
     # Modules CfC+SNN
@@ -56,3 +56,8 @@ class BrainConfig:
 
     # Sleep
     sleep_replay_count: int = 10
+
+    # Distillation — enrichissement par teacher
+    bridge_checkpoint_path: str = ""        # chemin vers bridge_step652.pt
+    use_distilled_input: bool = True        # active DistilledInputLayer
+    distilled_input_alpha_init: float = 0.8 # student domine au début

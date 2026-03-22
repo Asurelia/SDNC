@@ -11,16 +11,16 @@ class DualModelConfig:
     """
     Configuration complète du pipeline de distillation teacher → student.
 
-    Teacher : Qwen3.5-35B-A3B (BF16, A100 uniquement)
-    Student : Qwen3.5-4B (BF16 sur A100, bfloat16 sur 7800 XT)
+    Teacher : Qwen3-VL-32B (dense, VL, hidden=5120, 64 layers)
+    Student : Qwen3.5-4B (dense, VL, hidden=2560, 32 layers)
 
     Le teacher est gelé. Le student apprend via STDP/PC/hippocampe.
     Seul le ProjectionBridge (teacher → student) utilise du backprop.
     """
 
     # ── Teacher ──────────────────────────────────────────────────
-    teacher_model: str = "Qwen/Qwen3.5-35B-A3B"
-    teacher_hidden: int = 5120          # à confirmer par audit
+    teacher_model: str = "Qwen/Qwen3-VL-32B-Instruct"
+    teacher_hidden: int = 5120          # confirmé par audit
     teacher_layers: List[int] = field(
         default_factory=lambda: [16, 32, 48, 64]
     )
@@ -29,7 +29,7 @@ class DualModelConfig:
     student_model: str = "Qwen/Qwen3.5-4B"
     student_hidden: int = 2560
     student_layers: List[int] = field(
-        default_factory=lambda: [8, 16, 24, 36]
+        default_factory=lambda: [8, 16, 24, 32]
     )
 
     # ── ProjectionBridge ─────────────────────────────────────────

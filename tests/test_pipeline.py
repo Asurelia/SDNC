@@ -31,12 +31,12 @@ class TestDualModelConfig:
         """Vérifie les valeurs par défaut du DualModelConfig."""
         config = DualModelConfig()
 
-        assert config.teacher_model == "Qwen/Qwen3.5-35B-A3B"
+        assert config.teacher_model == "Qwen/Qwen3-VL-32B-Instruct"
         assert config.student_model == "Qwen/Qwen3.5-4B"
         assert config.teacher_hidden == 5120
         assert config.student_hidden == 2560
         assert config.teacher_layers == [16, 32, 48, 64]
-        assert config.student_layers == [8, 16, 24, 36]
+        assert config.student_layers == [8, 16, 24, 32]
         assert config.distill_projection_dim == 1024
         assert config.distill_temperature == 2.0
         assert config.distill_alpha == 0.7
@@ -59,7 +59,7 @@ class TestDualModelConfig:
 
         assert brain.model_name == "Qwen/Qwen3.5-4B"
         assert brain.llm_hidden_dim == 2560
-        assert brain.intercept_layers == [8, 16, 24, 36]
+        assert brain.intercept_layers == [8, 16, 24, 32]
         assert brain.n_modules == 4
         assert brain.use_quantization is False
 

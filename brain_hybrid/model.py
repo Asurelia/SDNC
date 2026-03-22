@@ -2,11 +2,13 @@
 BrainHybridModel — Cerveau artificiel complet.
 
 Assemble Qwen (gelé) + CfC+SNN + STDP + Hippocampe + Injection +
-ACC (détection conflit) + StepScheduler (rythmes) + Predictive Coding.
+ACC (détection conflit) + StepScheduler (rythmes) + Predictive Coding +
+DistilledInputLayer (enrichissement par teacher distillé).
 """
 
 import torch
 import torch.nn as nn
+from pathlib import Path
 from .config import BrainConfig
 from .llm.qwen_wrapper import QwenWrapper
 from .core.brain_module import BrainModule
@@ -14,6 +16,7 @@ from .core.stdp import STDPLearning
 from .core.injection import InjectionGate, BrainHookManager, HippocampalPrefixInjector
 from .core.acc import ACCModule
 from .core.predictive_coding import HierarchicalPC
+from .core.distilled_input import DistilledInputLayer
 from .memory.hippocampus import HippocampalMemory
 from .utils.device import get_device, HW_CONFIG
 from .utils.step_scheduler import StepScheduler
@@ -115,6 +118,36 @@ class BrainHybridModel(nn.Module):
             pc_lr=self.config.pc_lr,
         )
 
+        # Couche de fusion distillation (enrichissement teacher → student)
+        if self.config.use_distilled_input:
+            self.distilled_input = DistilledInputLayer(
+                n_layers=self.config.n_modules,
+                hidden_dim=self.config.llm_hidden_dim,
+                alpha_init=self.config.distilled_input_alpha_init,
+            ).to(self.device)
+        else:
+            self.distilled_input = None
+
+        # ProjectionBridge distillé (chargé depuis checkpoint, gelé)
+        self.bridge = None
+        if self.config.bridge_checkpoint_path:
+            bridge_path = Path(self.config.bridge_checkpoint_path)
+            if bridge_path.exists():
+                from pipeline.distillation_engine import ProjectionBridge
+                ckpt = torch.load(str(bridge_path), map_location=self.device, weights_only=False)
+                # Détecter les dimensions depuis le checkpoint
+                t_dim = ckpt.get('teacher_hidden', 5120)
+                s_dim = ckpt.get('student_hidden', self.config.llm_hidden_dim)
+                b_dim = ckpt.get('bottleneck', 1024)
+                self.bridge = nn.ModuleList([
+                    ProjectionBridge(t_dim, b_dim, s_dim).to(self.device)
+                    for _ in range(self.config.n_modules)
+                ])
+                self.bridge.load_state_dict(ckpt['bridge_state_dict'])
+                for p in self.bridge.parameters():
+                    p.requires_grad = False
+                print(f"Bridge chargé : cosine={ckpt.get('cosine', 'N/A')}")
+
         # État global
         self.global_state = torch.zeros(
             self.config.state_dim,
@@ -124,8 +157,14 @@ class BrainHybridModel(nn.Module):
         self.error_history = []
         self.step_count = 0
 
-    def forward(self, prompt: str, image=None, learn: bool = True) -> dict:
-        """Traitement complet avec rythmes, PC, ACC, injection, sleep."""
+    def forward(self, prompt: str, image=None, learn: bool = True,
+                teacher_reps=None) -> dict:
+        """
+        Traitement complet avec rythmes, PC, ACC, injection, sleep.
+
+        Si teacher_reps fournis + bridge disponible → enrichissement distillé.
+        Sinon → pipeline classique (student seul).
+        """
 
         # 1. Scheduler step
         self.scheduler.step()
@@ -137,6 +176,17 @@ class BrainHybridModel(nn.Module):
             layers=self.config.intercept_layers,
             image=image,
         )
+
+        # 2b. Enrichissement par bridge distillé (si disponible)
+        fusion_stats = {"alphas": [], "gates": [], "cosine_per_layer": []}
+        bridge_active = False
+
+        if (self.bridge is not None and self.distilled_input is not None
+                and teacher_reps is not None):
+            with torch.no_grad():
+                teacher_projected = [self.bridge[i](teacher_reps[i]) for i in range(len(self.bridge))]
+            layer_reps, fusion_stats = self.distilled_input(layer_reps, teacher_projected)
+            bridge_active = True
 
         # 3. Codage prédictif hiérarchique
         pc_errors = self.pc.forward(layer_reps)
@@ -249,6 +299,15 @@ class BrainHybridModel(nn.Module):
             'scheduler_phase': self.scheduler.get_phase(),
             'sleep_triggered': sleep_triggered,
             'step': self.step_count,
+            # Distillation monitoring
+            'fusion_alphas': fusion_stats.get("alphas", []),
+            'fusion_gates': fusion_stats.get("gates", []),
+            'cosine_per_layer': fusion_stats.get("cosine_per_layer", []),
+            'teacher_influence': (
+                self.distilled_input.get_teacher_influence()
+                if self.distilled_input else 0.0
+            ),
+            'bridge_active': bridge_active,
         }
 
     def _sleep_consolidation(self) -> bool:
