@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SDNC Atelier</title>
+    <link rel="stylesheet" href="/app.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="app-header">
+        <div>
+          <p class="eyebrow">Sparse Dynamic Neural Circuits</p>
+          <h1>SDNC Atelier</h1>
+        </div>
+        <div class="health-row" aria-label="Etat du système">
+          <div class="health-dot"></div>
+          <strong id="circuit-count">--</strong>
+          <span>circuits</span>
+        </div>
+      </header>
+
+      <section class="command-deck" aria-label="Contrôles d'entraînement">
+        <div class="metric-tile">
+          <span>À traiter</span>
+          <strong id="queued-count">0</strong>
+        </div>
+        <div class="metric-tile">
+          <span>En cours</span>
+          <strong id="running-count">0</strong>
+        </div>
+        <div class="metric-tile">
+          <span>Terminé</span>
+          <strong id="done-count">0</strong>
+        </div>
+        <div class="metric-tile">
+          <span>Erreur</span>
+          <strong id="failed-count">0</strong>
+        </div>
+
+        <label class="range-control">
+          <span>Mode</span>
+          <input id="mode-slider" type="range" min="0" max="2" step="1" value="0" />
+          <strong id="mode-label">Rapide</strong>
+        </label>
+
+        <label class="range-control">
+          <span>Lot</span>
+          <input id="batch-slider" type="range" min="1" max="20" step="1" value="3" />
+          <strong id="batch-label">3</strong>
+        </label>
+
+        <label class="toggle">
+          <input id="learn-toggle" type="checkbox" checked />
+          <span>Apprendre</span>
+        </label>
+
+        <label class="toggle">
+          <input id="tools-toggle" type="checkbox" />
+          <span>Outils</span>
+        </label>
+
+        <button id="process-next-btn" type="button">
+          <span class="icon">▶</span>
+          Suivant
+        </button>
+        <button id="process-batch-btn" type="button" class="primary-alt">
+          <span class="icon">▣</span>
+          Lot
+        </button>
+        <button id="improve-btn" type="button" class="secondary">
+          <span class="icon">◇</span>
+          Améliorer
+        </button>
+        <button id="learn-btn" type="button" class="secondary">
+          <span class="icon">△</span>
+          Lacune
+        </button>
+        <button id="refresh-btn" type="button" class="icon-btn" title="Rafraîchir">↻</button>
+      </section>
+
+      <section class="workspace">
+        <section class="intake-panel panel" aria-label="Entrée des données">
+          <div class="panel-title">
+            <h2>Données</h2>
+            <span id="upload-state" class="pill">prêt</span>
+          </div>
+
+          <div id="dropzone" class="dropzone" tabindex="0">
+            <input id="file-input" type="file" multiple hidden />
+            <strong>Glisser fichiers</strong>
+            <span>texte, code, image, audio, vidéo</span>
+            <button id="choose-files-btn" type="button" class="secondary">Choisir</button>
+          </div>
+
+          <form id="prompt-form" class="compact-form">
+            <textarea
+              id="prompt"
+              rows="4"
+              placeholder="Question, test, hypothèse..."
+              autocomplete="off"
+            ></textarea>
+            <button id="send-btn" type="submit">
+              <span class="icon">↵</span>
+              Envoyer
+            </button>
+          </form>
+
+          <form id="sensory-form" class="compact-form">
+            <div class="field-row">
+              <select id="sensor-modality" title="Modalité">
+                <option value="text">Texte</option>
+                <option value="image">Image</option>
+                <option value="audio">Audio</option>
+                <option value="video">Vidéo</option>
+              </select>
+              <input id="sensor-label" placeholder="label" autocomplete="off" />
+            </div>
+            <textarea
+              id="sensor-text"
+              rows="3"
+              placeholder="Signal manuel..."
+              autocomplete="off"
+            ></textarea>
+            <button id="observe-btn" type="submit" class="secondary">
+              <span class="icon">◎</span>
+              Observer
+            </button>
+          </form>
+        </section>
+
+        <section class="queue-panel panel" aria-label="File d'entraînement">
+          <div class="panel-title">
+            <h2>File</h2>
+            <span id="progress-label" class="pill">0%</span>
+          </div>
+          <div class="progress-track">
+            <div id="progress-fill"></div>
+          </div>
+
+          <div class="queue-board">
+            <section class="queue-column" data-status="queued">
+              <header><h3>À traiter</h3><span id="queued-pill">0</span></header>
+              <div id="queued-list" class="file-list"></div>
+            </section>
+            <section class="queue-column" data-status="running">
+              <header><h3>En cours</h3><span id="running-pill">0</span></header>
+              <div id="running-list" class="file-list"></div>
+            </section>
+            <section class="queue-column" data-status="done">
+              <header><h3>Terminé</h3><span id="done-pill">0</span></header>
+              <div id="done-list" class="file-list"></div>
+            </section>
+            <section class="queue-column" data-status="failed">
+              <header><h3>À revoir</h3><span id="failed-pill">0</span></header>
+              <div id="failed-list" class="file-list"></div>
+            </section>
+          </div>
+        </section>
+
+        <aside class="monitor-panel">
+          <section class="panel">
+            <div class="panel-title">
+              <h2>Monitoring</h2>
+              <span id="confidence-pill" class="pill">--</span>
+            </div>
+            <dl class="stats-grid">
+              <div><dt>Sparsité</dt><dd id="sparsity">--</dd></div>
+              <div><dt>Actifs max</dt><dd id="max-active">--</dd></div>
+              <div><dt>VRAM chaude</dt><dd id="hot-vram">--</dd></div>
+              <div><dt>Experts hot</dt><dd id="hot-experts">--</dd></div>
+              <div><dt>Salience</dt><dd id="salience-value">--</dd></div>
+              <div><dt>Novelty</dt><dd id="novelty-value">--</dd></div>
+            </dl>
+            <div id="tool-list" class="chip-list"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-title">
+              <h2>Circuits</h2>
+              <span id="active-count-pill" class="pill">--</span>
+            </div>
+            <div id="circuit-grid" class="circuit-grid"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-title"><h2>Logs</h2></div>
+            <div id="event-log" class="log-list"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-title"><h2>Traces</h2></div>
+            <div id="tool-traces" class="trace-list"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-title"><h2>Mémoire</h2></div>
+            <div id="memory-list" class="memory-list"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-title"><h2>Observations</h2></div>
+            <div id="sensory-list" class="memory-list"></div>
+          </section>
+        </aside>
+      </section>
+    </main>
+
+    <template id="file-card-template">
+      <article class="file-card">
+        <div class="file-head">
+          <strong class="file-name"></strong>
+          <span class="file-modality"></span>
+        </div>
+        <p class="file-preview"></p>
+        <div class="file-meta"></div>
+        <div class="file-actions"></div>
+      </article>
+    </template>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

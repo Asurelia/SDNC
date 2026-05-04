@@ -1,0 +1,232 @@
+# SDNC Efficiency Strategy
+
+Last updated: 2026-05-03.
+
+## Objective
+
+SDNC is not trying to be a smaller transformer. It is trying to avoid the main
+places where transformer-style systems spend memory and compute:
+
+- dense activation on every step;
+- large KV cache for long context;
+- static knowledge packed into always-resident weights;
+- poor separation between hot working state and cold capacity.
+
+The target shape is:
+
+```text
+small hot core
++ sparse active experts
++ compressed context LOD
++ sensory event bindings
++ external episodic/procedural memory
++ cold experience/expert packs
++ local verification and consolidation
+```
+
+## Hot Vs Cold Capacity
+
+SDNC treats memory like a game engine treats assets.
+
+```text
+Hot path, RAM/VRAM:
+  active sparse circuits
+  current working state
+  current context summary/prototypes
+  current sensory event binding
+  active expert cache
+  expert lifecycle registry
+  optional current encoder
+
+Cold path, RAM/NVMe:
+  raw datasets
+  old episodes
+  old sensory bindings
+  experience packs
+  inactive experts
+  rejected experiments
+  source traces
+```
+
+The rule is simple: nothing stays hot unless it is useful right now.
+
+## Cognitive Budgets
+
+`sdnc.agent.budget.BudgetManager` exposes three runtime modes:
+
+| Mode | Goal | Behavior |
+| ---- | ---- | -------- |
+| `fast` | low latency | small memory recall, few tools, few hot experts |
+| `think` | balanced reasoning | normal recall, local verification, more context |
+| `max` | hard tasks | larger recall, more tools, more hot experts, external advisors only if enabled |
+
+These budgets control:
+
+- `memory_top_k`;
+- `max_tool_calls`;
+- context segment count;
+- context character cap;
+- max hot experts;
+- whether source-backed learning may run.
+
+This is the SDNC equivalent of “spend more thought only when needed”.
+
+## Context LOD
+
+Transformers usually keep long context through KV cache. SDNC instead creates a
+level-of-detail packet:
+
+```text
+raw text
+  -> segments
+  -> segment summaries
+  -> sparse prototypes
+  -> routing text
+```
+
+The sparse learner sees the `routing_text`, not necessarily the full raw
+context. Raw detail can stay in memory or source files and be reopened only when
+needed.
+
+Implementation:
+
+- `sdnc.agent.context_lod.ContextLODCompressor`
+- `ContextPacket.original_chars`
+- `ContextPacket.global_summary`
+- `ContextPacket.prototypes`
+- `ContextPacket.estimated_tokens_saved`
+
+## Sensory LOD
+
+SDNC does not feed every modality into one dense multimodal transformer. It
+builds small modality signatures, binds them into an event, and routes only the
+compact event through sparse circuits:
+
+```text
+text/image/audio/video
+  -> local sensory signature
+  -> PerceptionBus binding
+  -> fused event embedding + reliability
+  -> sensory_bindings memory
+  -> sparse circuits / hot experts
+```
+
+This keeps images, audio, and video as cold evidence unless their current
+features matter. Strong frozen encoders can replace the local extractors later,
+but learning still happens in circuits, memory, procedures, and verified
+experts.
+
+Implemented files:
+
+- `sdnc.agent.perception.PerceptionBus`
+- `sdnc.agent.multimodal.LocalMultimodalEncoder`
+- `PersistentMemory.sensory_bindings` table
+- web endpoint `POST /api/observe`
+
+## Expert Capacity
+
+Current code stores experts as managed assets. The first concrete expert kind is
+`procedure`: a learned, verified way to use a tool or action pattern. Future
+kinds can point at real neural weights, adapters, or compiled skills.
+
+Expert lifecycle:
+
+```text
+candidate
+  -> probation
+  -> active
+  -> hot for this interaction
+  -> cold when not useful now
+  -> retired when repeated failures lower utility
+```
+
+The architecture is ready for:
+
+- quantized experts;
+- LoRA-like deltas;
+- procedure experts;
+- dataset-derived experience packs;
+- LRU hot expert cache.
+
+For the current RX 7800 XT target, the default assumptions are conservative:
+
+```text
+total_vram_gb       = 16
+reserved_vram_gb    = 2
+usable_vram_gb      = 14
+avg_hot_expert_vram = 0.08GB
+```
+
+When a future 9B/12B core is introduced, the same budget manager should treat
+that core as hot capacity and lower the expert cache accordingly.
+
+Implemented files:
+
+- `sdnc.agent.experts.ExpertManager`
+- `PersistentMemory.experts` table
+- interaction metadata `expert_lifecycle`
+- web status `expert_summary`
+
+## Dataset Strategy
+
+Datasets are not treated as pretraining sludge. They are streams of experiences:
+
+```text
+dataset row
+  -> ModalitySample(s)
+  -> bound sensory event
+  -> sparse circuit update
+  -> episodic/sensory/procedural memory
+  -> optional compressed ExperiencePack
+```
+
+Hugging Face ingestion is optional and should use streaming when possible.
+Official references:
+
+- https://huggingface.co/docs/datasets/en/stream
+- https://huggingface.co/docs/datasets/about_dataset_features
+
+## Why This Can Beat Transformers In Some Areas
+
+SDNC is not expected to beat frontier transformers on closed-book general
+reasoning immediately. Its advantage should appear first where dense
+transformers are structurally wasteful:
+
+- long-lived local projects;
+- repeated tool workflows;
+- personalization;
+- incremental learning;
+- low VRAM operation;
+- tasks where tests and local verification are available;
+- multimodal streams where only small features are relevant now.
+
+The win condition is:
+
+```text
+less hot memory
++ better local adaptation
++ fewer repeated mistakes
++ useful source/tool use
++ compact consolidation
+```
+
+## Current Implementation Status
+
+Implemented:
+
+- budget modes and resource estimates;
+- context LOD compression;
+- self-managed expert registry and hot/cold selection;
+- multimodal local signatures;
+- sensory event binding and persistence;
+- dataset ingestion and experience packs;
+- lacune-driven source-backed learning;
+- local SQLite event/memory store.
+
+Not implemented yet:
+
+- real neural hot expert cache;
+- quantized expert weight format;
+- GPU residency manager;
+- non-transformer language cortex;
+- large benchmark suite versus transformer baselines.

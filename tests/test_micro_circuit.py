@@ -38,9 +38,9 @@ def test_state_persistence(circuit, config):
     assert not torch.allclose(hx1, hx2, atol=1e-6)
 
 
-def test_state_size(circuit):
-    # state_size = inter + command + motor neurons
-    expected = 4 + 3 + 2  # from default config
+def test_state_size(circuit, config):
+    # state_size = inter + command + motor neurons from the actual NCP wiring
+    expected = config.ncp_inter_neurons + config.ncp_command_neurons + config.circuit_output_dim
     assert circuit.state_size == expected
 
 

@@ -20,6 +20,21 @@ dev = [
 directml = [
     "torch-directml",
 ]
+sync = [
+    "convex",
+]
+datasets = [
+    "datasets",
+    "pillow",
+]
+
+[project.scripts]
+sdnc-agent = "sdnc.agent.cli:main"
+sdnc-web = "sdnc.agent.web:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
 
 [build-system]
 requires = ["setuptools>=68.0"]

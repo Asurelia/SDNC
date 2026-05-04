@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+venv/
+.mcp.json
+
+# Runtime learning state and experiment outputs
+data/
+checkpoints/
