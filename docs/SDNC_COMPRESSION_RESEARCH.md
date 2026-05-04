@@ -233,6 +233,10 @@ compression-friendly micro-experts
 + no dense always-on transformer center
 ```
 
+For the non-transformer translation of these ideas into predictive coding,
+active inference, expert streaming, and replay/consolidation, see
+`docs/NON_TRANSFORMER_ROADMAP.md`.
+
 ## Research Experiments
 
 ### Experiment 1: Expert Atlas Prototype

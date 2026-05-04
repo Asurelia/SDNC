@@ -36,6 +36,7 @@ and feedback-driven plasticity.
 - `sdnc/core/` - liquid/CfC/NCP circuit experiments.
 - `docs/ARCHITECTURE.md` - current architecture.
 - `docs/EFFICIENCY_STRATEGY.md` - how SDNC avoids transformer-style dense memory/compute.
+- `docs/NON_TRANSFORMER_ROADMAP.md` - translates transformer-era compression into SDNC-native research milestones.
 - `docs/DATASET_SOURCES.md` - Hugging Face datasets suitable for SDNC-style experience learning.
 - `docs/TRAINING_DASHBOARD.md` - local training cockpit, file queue, monitoring, and UI controls.
 - `docs/SDNC_PHASE1_SPEC.md` - archived original long specification.

@@ -143,6 +143,7 @@ coeur chaud 6-9B
 Voir:
 
 - [Compression Research](docs/SDNC_COMPRESSION_RESEARCH.md)
+- [Non-Transformer Roadmap](docs/NON_TRANSFORMER_ROADMAP.md)
 - [Efficiency Strategy](docs/EFFICIENCY_STRATEGY.md)
 - [Architecture](docs/ARCHITECTURE.md)
 
@@ -151,6 +152,7 @@ Voir:
 - [Architecture actuelle](docs/ARCHITECTURE.md)
 - [Plan d'implementation](docs/IMPLEMENTATION_PLAN.md)
 - [Strategie d'efficacite](docs/EFFICIENCY_STRATEGY.md)
+- [Roadmap non-transformer](docs/NON_TRANSFORMER_ROADMAP.md)
 - [Sources de datasets](docs/DATASET_SOURCES.md)
 - [Dashboard d'entrainement](docs/TRAINING_DASHBOARD.md)
 - [Recherche compression](docs/SDNC_COMPRESSION_RESEARCH.md)
