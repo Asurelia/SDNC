@@ -10,11 +10,17 @@ SDNC center:
 ```text
 sensory signals
 + sparse local circuits
++ Sparse Cognitive Core / Global Workspace
 + persistent memory
 + verified experts
 + tools
 + local plasticity
 ```
+
+The center is deliberately lightweight. It organizes the current mental state,
+attention, prediction errors, expert proposals, memories, tool results, and
+feedback. It is not a transformer and it is not the only place where knowledge
+lives.
 
 ## Core Distinction
 
@@ -128,6 +134,7 @@ budget rule: refuse to decode what cannot be tested or used now
 
 ```text
 Hot path: 10-12 GB VRAM target
+  sparse cognitive core / global workspace
   sparse local core
   active micro-experts
   predictive router
@@ -150,7 +157,24 @@ Cold path: NVMe + SQLite
   file/dataset queue
 ```
 
-## Predictive Coding as the Non-Transformer Center
+## Sparse Cognitive Core as the Non-Transformer Center
+
+The non-transformer center is a bounded workspace:
+
+```text
+perception proposals
++ memory proposals
++ expert proposals
++ tool/action proposals
++ feedback/surprise
+-> attention arbitration
+-> next action or answer
+```
+
+It should not contain all knowledge. It should hold only the current belief
+packet and the signals required to choose what happens next.
+
+## Predictive Coding Inside The Center
 
 SDNC should predict more than the next word. It should predict:
 

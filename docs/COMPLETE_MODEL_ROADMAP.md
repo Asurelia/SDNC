@@ -15,6 +15,8 @@ SDNC reaches a complete research-model state when all of these are true:
 - It runs locally from an empty state and keeps learning across restarts.
 - It handles text, files, image/audio/video signatures, and tool results through
   sensory bindings rather than one dense prompt.
+- It maintains a sparse cognitive center that organizes perception, memory,
+  experts, tools, and feedback without storing all knowledge inside itself.
 - It predicts outcomes, detects surprise, and updates only active circuits.
 - It decides when to answer, when to search, when to ask for feedback, and when
   to run a bounded experiment.
@@ -34,6 +36,7 @@ User/environment/files/datasets
   -> sensory adapters
   -> PerceptionBus
   -> predictive sparse circuits
+  -> Sparse Cognitive Core / Global Workspace
   -> belief state + context LOD
   -> expert router + compressed expert atlas
   -> tool/action planner
@@ -41,10 +44,22 @@ User/environment/files/datasets
   -> memory + feedback + replay
 ```
 
+The center is a coordinator, not an all-knowing model:
+
+```text
+Sparse Cognitive Core:
+  keeps the current mental state
+  selects what deserves attention
+  compares predictions with reality
+  routes to experts, memory, and tools
+  decides whether to answer, explore, or ask feedback
+  records uncertainty and surprise
+```
+
 The hot path must stay small:
 
 ```text
-Hot:   active circuits, active experts, current belief packet, verifier heads
+Hot:   cognitive core, active circuits, active experts, current belief packet
 Warm:  recent decoded experts, codebooks, route prototypes, source stats
 Cold:  SQLite, event log, sensory bindings, experience packs, expert atlas
 ```
@@ -81,12 +96,26 @@ Primary files:
 - `sdnc/agent/web.py`
 - `tests/test_agent_*`
 
-## Phase 1 - Predictive Coding Core
+## Phase 1 - Sparse Cognitive Core And Predictive Coding
 
-Goal: turn SDNC from reactive learner into prediction-error learner.
+Goal: give SDNC a lightweight coordinating center and turn it from reactive
+learner into prediction-error learner.
 
 Tasks:
 
+- Add a `CognitiveCore` / `SparseGlobalWorkspace` module.
+- Maintain a bounded belief packet for the current interaction:
+  - active sensory signals;
+  - active circuits;
+  - recalled memories;
+  - candidate experts;
+  - tool/action proposals;
+  - uncertainty;
+  - surprise.
+- Add workspace slots with salience scores and decay.
+- Make all modules publish proposals to the workspace instead of directly
+  overwriting the response path.
+- Add arbitration rules for attention, memory, expert routing, and tools.
 - Add predicted confidence, predicted tool usefulness, and predicted outcome to
   each interaction.
 - Persist prediction vs observation deltas in SQLite.
@@ -100,6 +129,8 @@ Tasks:
 Acceptance criteria:
 
 - Every interaction stores a prediction trace.
+- The cognitive core records what it attended to and why.
+- The belief packet stays bounded and does not become a dense context dump.
 - Feedback changes future confidence/tool selection on similar inputs.
 - Repeated predictable interactions produce lower surprise.
 - Novel or failed interactions produce higher surprise and learning gaps.
@@ -113,6 +144,7 @@ Primary files:
 - `sdnc/agent/memory.py`
 - `sdnc/agent/types.py`
 - `sdnc/agent/static/app.js`
+- new `sdnc/agent/cognitive_core.py`
 
 ## Phase 2 - Active Inference Planner
 
@@ -416,7 +448,7 @@ Primary files:
 ## Suggested Build Order
 
 1. Phase 0: stabilize state, migrations, diagnostics.
-2. Phase 1: prediction traces and surprise.
+2. Phase 1: sparse cognitive core, prediction traces, and surprise.
 3. Phase 7 minimal: benchmark harness for learning improvement.
 4. Phase 2: active inference planner.
 5. Phase 3: compressed expert atlas.
@@ -436,7 +468,7 @@ measuring whether it is actually learning.
 The smallest version that deserves to be called a complete SDNC model is:
 
 - Phase 0 complete.
-- Phase 1 complete.
+- Phase 1 complete, including bounded Sparse Cognitive Core.
 - Phase 2 complete for read-only tools.
 - Phase 3 complete for `procedure`, `prototype`, and deterministic `low_rank`
   payloads.
@@ -457,6 +489,8 @@ experience -> prediction error -> local update -> verified expert/memory
 The full target adds:
 
 - compressed expert atlas with L0/L1/L2 decode;
+- Sparse Cognitive Core / Global Workspace that organizes perception, memory,
+  experts, tools, and feedback;
 - active inference planner with tool/search/sandbox choices;
 - multimodal sensory binding with optional frozen translators;
 - neuro-symbolic memory with provenance and counterexamples;

@@ -19,6 +19,7 @@ and feedback-driven plasticity.
 
 ## Important Files
 - `sdnc/agent/system.py` - observe -> sparse circuits -> tools -> memory -> local learning.
+- future `sdnc/agent/cognitive_core.py` - sparse global workspace that organizes attention, belief state, prediction traces, experts, memory, tools, and feedback without storing all knowledge itself.
 - `sdnc/agent/budget.py` - cognitive modes and hot/cold RAM/VRAM estimates.
 - `sdnc/agent/context_lod.py` - long-context compression into summaries/prototypes.
 - `sdnc/agent/experts.py` - lifecycle for self-created experts and hot/cold residency.
@@ -44,6 +45,7 @@ and feedback-driven plasticity.
 
 ## Rules
 - **CRITICAL**: Do not put Qwen, Gemma, or any LLM at the center of SDNC. A language model may only be an optional peripheral tool.
+- **CRITICAL**: SDNC's center is a sparse cognitive coordinator / global workspace, not a monolithic model or source of truth.
 - **CRITICAL**: The autonomous interaction system must learn through local updates, memory, tools, and feedback; no teacher/distillation pipeline.
 - **CRITICAL**: New circuits/skills must pass consensus plus sandbox experimentation before promotion.
 - **CRITICAL**: External tools/models are hypothesis sources only. Local tests, tool traces, memory, and user feedback decide what is learned.

@@ -109,15 +109,21 @@ Observation
   -> HashingExperienceEncoder
   -> BudgetManager + ContextLODCompressor
   -> LocalCircuitLearner
+  -> Sparse Cognitive Core / Global Workspace
   -> ExpertManager
   -> ToolRegistry
   -> PersistentMemory
   -> feedback / self-improvement
 ```
 
+Le centre cognitif sparse ne sait pas tout. Il garde l'etat mental courant,
+selectionne ce qui merite attention, compare predictions et realite, puis
+orchestre memoire, experts, outils et feedback.
+
 Principes non negociables:
 
 - pas de teacher model au centre;
+- pas de centre monolithique qui stocke toute la connaissance;
 - pas de distillation Qwen/Gemma comme moteur principal;
 - pas de backpropagation globale pendant l'interaction;
 - activation sparse bornee a `max_active_ratio <= 0.05`;

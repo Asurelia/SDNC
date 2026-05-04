@@ -10,16 +10,24 @@ SDNC is now split into two layers:
 2. `sdnc/agent`: a runnable interaction learner that can operate without a
    large language model.
 
-The agent is not a wrapper around Qwen, Gemma, or a teacher model. Its center is:
+The agent is not a wrapper around Qwen, Gemma, or a teacher model. Its target
+center is a sparse cognitive coordinator, not an all-knowing model:
 
 ```text
 sensory signals -> PerceptionBus -> bound sensory event
-               -> sparse local circuits + living experts
+               -> sparse local circuits
+               -> Sparse Cognitive Core / Global Workspace
+               -> living experts + memory + tools
                -> memory/tool selection -> real tools
                -> feedback -> local Oja-style plasticity + SQLite memory
                -> lack detection -> multi-source hypotheses -> local verification
                -> periodic self-improvement sandbox
 ```
+
+The Sparse Cognitive Core keeps the current belief packet, attention/salience,
+prediction traces, uncertainty, and action proposals. It organizes perception,
+memory, experts, tools, and feedback, but it does not store all knowledge and it
+does not replace the specialized circuits.
 
 ## Runtime Modules
 
@@ -29,6 +37,9 @@ sensory signals -> PerceptionBus -> bound sensory event
   estimates hot VRAM/RAM pressure.
 - `ContextLODCompressor`: replaces dense long-context handling with segment
   summaries, prototypes, and compact routing text.
+- Future `CognitiveCore` / `SparseGlobalWorkspace`: a bounded state coordinator
+  that receives proposals from perception, circuits, memory, experts, and tools,
+  then chooses what deserves attention or action.
 - `ExpertManager`: manages self-created experts as living assets with
   probation, active, hot/cold, and retired states.
 - `LocalCircuitLearner`: maintains circuit keys, liquid state, usage counters,
