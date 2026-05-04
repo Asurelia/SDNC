@@ -27,6 +27,9 @@ evaluation, UI, packaging, and stretch research, see
 - Experience packs compress many observations into reusable prototypes.
 - Cognitive budgets (`fast`, `think`, `max`) control memory recall, tools,
   context LOD, and hot expert estimates.
+- Sparse Cognitive Core / Global Workspace keeps a bounded belief packet,
+  attention focus, prediction trace, uncertainty, and surprise for every learned
+  interaction or observation.
 - Context LOD replaces dense long-context handling with summaries/prototypes.
 - Self-managed expert lifecycle: verified learning can create procedure
   experts, select a hot subset, cool unused experts, and retire weak ones.
@@ -38,6 +41,8 @@ evaluation, UI, packaging, and stretch research, see
   and SSE stream for the frontend.
 - Optional Convex mirror is available but disabled by default.
 - Tests for encoding, plasticity, memory, and the end-to-end interaction loop.
+- Tests for cognitive workspace bounds, cognitive trace persistence, web API
+  exposure, and interaction metadata.
 - Archived the original Phase 1 spec in `docs/SDNC_PHASE1_SPEC.md`.
 
 ## Near-Term Hardening

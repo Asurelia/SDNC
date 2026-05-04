@@ -102,6 +102,11 @@ class AutonomousConfig:
     cold_library_disk_gb: float = 0.0
     context_lod_similarity: float = 0.82
 
+    # Sparse cognitive core / global workspace. This is the bounded center that
+    # organizes attention and proposals; it must not become a dense prompt dump.
+    cognitive_workspace_slots: int = 16
+    cognitive_attention_focus: int = 6
+
     # Expert lifecycle. Experts are living assets, not fixed weights.
     expert_active_utility: float = 0.62
     expert_min_utility: float = 0.30

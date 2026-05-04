@@ -101,6 +101,16 @@ Primary files:
 Goal: give SDNC a lightweight coordinating center and turn it from reactive
 learner into prediction-error learner.
 
+First implementation slice delivered:
+
+- `sdnc/agent/cognitive_core.py` creates bounded workspace slots, attention
+  focus, prediction traces, uncertainty, and surprise.
+- `PersistentMemory` persists these traces in `cognitive_traces`.
+- `InteractionLearningSystem.interact` and `observe` attach the cognitive trace
+  to result metadata, SQLite, and sync events.
+- The web UI exposes the current center action, uncertainty, surprise, slots,
+  mode, and attention focus.
+
 Tasks:
 
 - Add a `CognitiveCore` / `SparseGlobalWorkspace` module.

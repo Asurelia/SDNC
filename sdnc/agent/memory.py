@@ -111,6 +111,23 @@ class TrainingFileRecord:
 
 
 @dataclass
+class CognitiveTraceRecord:
+    """A persisted sparse cognitive workspace trace."""
+
+    id: str
+    timestamp: float
+    episode_id: str
+    input_text: str
+    mode: str
+    prediction: dict[str, Any]
+    observation: dict[str, Any]
+    attention: list[str]
+    surprise: float
+    uncertainty: float
+    payload: dict[str, Any]
+
+
+@dataclass
 class ExpertRecord:
     """A self-managed SDNC expert asset."""
 
@@ -543,6 +560,61 @@ class PersistentMemory:
         bindings.sort(key=lambda item: (item.similarity, item.salience), reverse=True)
         return bindings[:top_k]
 
+    def store_cognitive_trace(
+        self,
+        trace_id: str,
+        episode_id: str,
+        input_text: str,
+        mode: str,
+        prediction: dict[str, Any],
+        observation: dict[str, Any],
+        attention: list[str],
+        surprise: float,
+        uncertainty: float,
+        payload: dict[str, Any],
+    ) -> str:
+        """Persist one bounded cognitive workspace trace."""
+        with self._lock:
+            self.conn.execute(
+                """
+                INSERT INTO cognitive_traces
+                    (id, timestamp, episode_id, input_text, mode, prediction_json,
+                     observation_json, attention_json, surprise, uncertainty, payload_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    episode_id = excluded.episode_id,
+                    prediction_json = excluded.prediction_json,
+                    observation_json = excluded.observation_json,
+                    attention_json = excluded.attention_json,
+                    surprise = excluded.surprise,
+                    uncertainty = excluded.uncertainty,
+                    payload_json = excluded.payload_json
+                """,
+                (
+                    trace_id,
+                    time(),
+                    episode_id,
+                    input_text,
+                    mode,
+                    json.dumps(prediction, sort_keys=True, default=str),
+                    json.dumps(observation, sort_keys=True, default=str),
+                    json.dumps(attention, sort_keys=True, default=str),
+                    float(surprise),
+                    float(uncertainty),
+                    json.dumps(payload, sort_keys=True, default=str),
+                ),
+            )
+            self.conn.commit()
+        return trace_id
+
+    def recent_cognitive_traces(self, limit: int = 20) -> list[CognitiveTraceRecord]:
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT * FROM cognitive_traces ORDER BY timestamp DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [self._row_to_cognitive_trace(row) for row in rows]
+
     def add_training_file(
         self,
         name: str,
@@ -933,6 +1005,20 @@ class PersistentMemory:
                 context_json TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS cognitive_traces (
+                id TEXT PRIMARY KEY,
+                timestamp REAL NOT NULL,
+                episode_id TEXT NOT NULL,
+                input_text TEXT NOT NULL,
+                mode TEXT NOT NULL,
+                prediction_json TEXT NOT NULL,
+                observation_json TEXT NOT NULL,
+                attention_json TEXT NOT NULL,
+                surprise REAL NOT NULL,
+                uncertainty REAL NOT NULL,
+                payload_json TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS training_files (
                 id TEXT PRIMARY KEY,
                 timestamp REAL NOT NULL,
@@ -992,6 +1078,10 @@ class PersistentMemory:
                 ON sensory_bindings(timestamp DESC);
             CREATE INDEX IF NOT EXISTS idx_sensory_bindings_source
                 ON sensory_bindings(source);
+            CREATE INDEX IF NOT EXISTS idx_cognitive_traces_timestamp
+                ON cognitive_traces(timestamp DESC);
+            CREATE INDEX IF NOT EXISTS idx_cognitive_traces_episode
+                ON cognitive_traces(episode_id);
             CREATE INDEX IF NOT EXISTS idx_training_files_status
                 ON training_files(status);
             CREATE INDEX IF NOT EXISTS idx_training_files_updated_at
@@ -1075,6 +1165,21 @@ class PersistentMemory:
             preview=row["preview"],
             processed_episode_id=row["processed_episode_id"],
             error=row["error"],
+            payload=json.loads(row["payload_json"] or "{}"),
+        )
+
+    def _row_to_cognitive_trace(self, row: sqlite3.Row) -> CognitiveTraceRecord:
+        return CognitiveTraceRecord(
+            id=row["id"],
+            timestamp=float(row["timestamp"]),
+            episode_id=row["episode_id"],
+            input_text=row["input_text"],
+            mode=row["mode"],
+            prediction=json.loads(row["prediction_json"] or "{}"),
+            observation=json.loads(row["observation_json"] or "{}"),
+            attention=json.loads(row["attention_json"] or "[]"),
+            surprise=float(row["surprise"]),
+            uncertainty=float(row["uncertainty"]),
             payload=json.loads(row["payload_json"] or "{}"),
         )
 

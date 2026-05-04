@@ -14,6 +14,7 @@ import numpy as np
 from sdnc.agent.budget import BudgetManager
 from sdnc.agent.config import AutonomousConfig
 from sdnc.agent.context_lod import ContextLODCompressor
+from sdnc.agent.cognitive_core import CognitiveCore, CognitiveWorkspace
 from sdnc.agent.encoding import HashingExperienceEncoder
 from sdnc.agent.experts import ExpertManager
 from sdnc.agent.learning import LearningCycleReport, SelfDirectedLearner
@@ -82,6 +83,7 @@ class InteractionLearningSystem:
             self.encoder,
             similarity_threshold=self.config.context_lod_similarity,
         )
+        self.cognitive_core = CognitiveCore(self.config)
         self.multimodal_encoder = LocalMultimodalEncoder(self.config.input_dim)
         self.perception = PerceptionBus(self.multimodal_encoder, self.encoder)
         self.memory = PersistentMemory(self.config.memory_path, self.config.input_dim)
@@ -145,6 +147,15 @@ class InteractionLearningSystem:
             activation_confidence=activation.confidence,
             max_tool_calls=budget.max_tool_calls,
         )
+        workspace = self.cognitive_core.start(
+            input_text=text,
+            mode=budget.mode,
+            activation=activation,
+            memories=memories,
+            tool_names=tool_names,
+            experts=expert_report.selected_hot,
+            context_summary=context_packet.global_summary,
+        )
         tool_context = {
             **enriched_context,
             "embedding": embedding,
@@ -152,18 +163,25 @@ class InteractionLearningSystem:
             "memories": memories,
             "context_packet": context_packet,
             "cognitive_budget": budget,
+            "cognitive_workspace": workspace,
             "active_experts": expert_report.selected_hot,
         }
         tool_results = self._run_tools(tool_names, text, tool_context)
 
         salience = self._salience(activation.novelty, memories, tool_results, feedback)
+        feedback_score = feedback.clipped_score() if feedback else None
+        workspace = self.cognitive_core.complete(
+            workspace,
+            tool_results=tool_results,
+            salience=salience,
+            feedback_score=feedback_score,
+        )
         self.expert_manager.record_outcome(
             expert_report.selected_hot,
             success=activation.confidence >= self.config.confidence_threshold
             or any(result.success for result in tool_results),
         )
         outcome = feedback.text if feedback else None
-        feedback_score = feedback.clipped_score() if feedback else None
         episode_id = ""
 
         if learn:
@@ -178,6 +196,9 @@ class InteractionLearningSystem:
                         "successful_tools": [
                             result.tool_name for result in tool_results if result.success
                         ],
+                        "cognitive_trace_id": workspace.id,
+                        "surprise": workspace.surprise,
+                        "uncertainty": workspace.uncertainty,
                     },
                 }
                 episode_id = self.memory.store_episode(
@@ -189,6 +210,7 @@ class InteractionLearningSystem:
                     outcome=outcome,
                     feedback_score=feedback_score,
                 )
+            self._persist_cognitive_trace(workspace, episode_id, text)
             self._learn_tool_preferences(text, embedding, tool_results, feedback)
             self._interactions_since_improvement += 1
             improvement_report = self._maybe_self_improve()
@@ -215,6 +237,7 @@ class InteractionLearningSystem:
                 "context_lod": _context_payload(context_packet),
                 "resource_budget": _resource_payload(resource_snapshot),
                 "expert_lifecycle": _expert_report_payload(expert_report),
+                "cognitive_core": _cognitive_workspace_payload(workspace),
             },
         )
         self._last_result = result
@@ -233,6 +256,10 @@ class InteractionLearningSystem:
                 "context_compression_ratio": context_packet.compression_ratio,
                 "hot_vram_gb": resource_snapshot.hot_vram_gb,
                 "hot_experts": [expert.name for expert in expert_report.selected_hot],
+                "cognitive_trace_id": workspace.id,
+                "uncertainty": workspace.uncertainty,
+                "surprise": workspace.surprise,
+                "attention_focus": list(workspace.attention_focus),
             },
         )
         return result
@@ -293,12 +320,22 @@ class InteractionLearningSystem:
             if use_tools
             else []
         )
+        workspace = self.cognitive_core.start(
+            input_text=event.summary,
+            mode=budget.mode,
+            activation=activation,
+            memories=memories,
+            tool_names=tool_names,
+            experts=expert_report.selected_hot,
+            context_summary=f"{event.source} {'+'.join(event.modalities)}",
+        )
         tool_context = {
             **observation_context,
             "embedding": event.embedding,
             "active_circuits": activation.indices,
             "memories": memories,
             "sensory_memories": sensory_memories,
+            "cognitive_workspace": workspace,
             "active_experts": expert_report.selected_hot,
         }
         tool_results = self._run_tools(tool_names, event.summary, tool_context)
@@ -309,6 +346,11 @@ class InteractionLearningSystem:
                 0.0,
                 1.0,
             )
+        )
+        workspace = self.cognitive_core.complete(
+            workspace,
+            tool_results=tool_results,
+            salience=salience,
         )
         self.expert_manager.record_outcome(
             expert_report.selected_hot,
@@ -326,6 +368,7 @@ class InteractionLearningSystem:
                     active_circuits=activation.indices,
                     salience=salience,
                 )
+            self._persist_cognitive_trace(workspace, episode_id, event.summary)
             self.memory.store_sensory_binding(
                 event_id=event.id,
                 episode_id=episode_id,
@@ -367,6 +410,7 @@ class InteractionLearningSystem:
                 "cognitive_budget": _budget_payload(budget),
                 "resource_budget": _resource_payload(resource_snapshot),
                 "expert_lifecycle": _expert_report_payload(expert_report),
+                "cognitive_core": _cognitive_workspace_payload(workspace),
             },
         )
         self._last_result = result
@@ -391,6 +435,10 @@ class InteractionLearningSystem:
                 "mode": budget.mode,
                 "hot_vram_gb": resource_snapshot.hot_vram_gb,
                 "hot_experts": [expert.name for expert in expert_report.selected_hot],
+                "cognitive_trace_id": workspace.id,
+                "uncertainty": workspace.uncertainty,
+                "surprise": workspace.surprise,
+                "attention_focus": list(workspace.attention_focus),
             },
         )
         return result
@@ -437,6 +485,9 @@ class InteractionLearningSystem:
 
     def recent_sensory_bindings(self, limit: int = 10):
         return self.memory.recent_sensory_bindings(limit)
+
+    def recent_cognitive_traces(self, limit: int = 10):
+        return self.memory.recent_cognitive_traces(limit)
 
     def queue_training_file(
         self,
@@ -677,6 +728,26 @@ class InteractionLearningSystem:
 
     def recent_events(self, limit: int = 50, after_id: int | None = None):
         return self.memory.recent_events(limit=limit, after_id=after_id)
+
+    def _persist_cognitive_trace(
+        self,
+        workspace: CognitiveWorkspace,
+        episode_id: str,
+        input_text: str,
+    ) -> None:
+        payload = workspace.to_payload()
+        self.memory.store_cognitive_trace(
+            trace_id=workspace.id,
+            episode_id=episode_id,
+            input_text=input_text,
+            mode=workspace.mode,
+            prediction=workspace.prediction,
+            observation=workspace.observation,
+            attention=list(workspace.attention_focus),
+            surprise=workspace.surprise,
+            uncertainty=workspace.uncertainty,
+            payload=payload,
+        )
 
     def _default_registry(self) -> ToolRegistry:
         registry = ToolRegistry()
@@ -1013,3 +1084,7 @@ def _expert_report_payload(report) -> dict[str, Any]:
         "total_hot_vram_gb": report.total_hot_vram_gb,
         "total_hot_ram_gb": report.total_hot_ram_gb,
     }
+
+
+def _cognitive_workspace_payload(workspace: CognitiveWorkspace) -> dict[str, Any]:
+    return workspace.to_payload()

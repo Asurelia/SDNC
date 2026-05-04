@@ -37,9 +37,10 @@ does not replace the specialized circuits.
   estimates hot VRAM/RAM pressure.
 - `ContextLODCompressor`: replaces dense long-context handling with segment
   summaries, prototypes, and compact routing text.
-- Future `CognitiveCore` / `SparseGlobalWorkspace`: a bounded state coordinator
-  that receives proposals from perception, circuits, memory, experts, and tools,
-  then chooses what deserves attention or action.
+- `CognitiveCore` / `SparseGlobalWorkspace`: a bounded state coordinator that
+  receives proposals from perception, circuits, memory, experts, and tools,
+  then chooses what deserves attention or action. It persists prediction,
+  observation, uncertainty, surprise, and attention focus in `cognitive_traces`.
 - `ExpertManager`: manages self-created experts as living assets with
   probation, active, hot/cold, and retired states.
 - `LocalCircuitLearner`: maintains circuit keys, liquid state, usage counters,

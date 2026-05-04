@@ -57,7 +57,17 @@ def build_handler(app: SDNCWebApp):
                     _sensory_binding_payload(binding)
                     for binding in app.system.recent_sensory_bindings(limit=12)
                 ]
-                self._send_json({"memories": memories, "sensory_bindings": sensory})
+                cognitive = [
+                    _cognitive_trace_payload(trace)
+                    for trace in app.system.recent_cognitive_traces(limit=12)
+                ]
+                self._send_json(
+                    {
+                        "memories": memories,
+                        "sensory_bindings": sensory,
+                        "cognitive_traces": cognitive,
+                    }
+                )
             elif parsed.path == "/api/events":
                 query = parse_qs(parsed.query)
                 after = int(query["after"][0]) if "after" in query else None
@@ -261,6 +271,10 @@ def build_handler(app: SDNCWebApp):
                 ),
                 "expert_summary": app.system.expert_manager.summary(),
                 "file_queue": app.system.training_file_summary(),
+                "cognitive_core": {
+                    "workspace_slots": config.cognitive_workspace_slots,
+                    "attention_focus": config.cognitive_attention_focus,
+                },
                 "modalities": sorted(SUPPORTED_MODALITIES),
                 "tools": app.system.registry.names(),
                 "memory_path": str(config.memory_path),
@@ -400,6 +414,22 @@ def _sensory_binding_payload(binding) -> dict[str, Any]:
         "binding_score": binding.binding_score,
         "salience": binding.salience,
         "similarity": binding.similarity,
+    }
+
+
+def _cognitive_trace_payload(trace) -> dict[str, Any]:
+    return {
+        "id": trace.id,
+        "timestamp": trace.timestamp,
+        "episode_id": trace.episode_id,
+        "input_text": trace.input_text,
+        "mode": trace.mode,
+        "prediction": trace.prediction,
+        "observation": trace.observation,
+        "attention": trace.attention,
+        "surprise": trace.surprise,
+        "uncertainty": trace.uncertainty,
+        "payload": trace.payload,
     }
 
 

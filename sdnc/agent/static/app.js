@@ -239,6 +239,7 @@ async function renderRecent() {
   const data = await fetchJson("/api/recent");
   renderMemory(data.memories || []);
   renderSensory(data.sensory_bindings || []);
+  if (!state.lastResult) renderCognitivePanel((data.cognitive_traces || [])[0]?.payload || null);
 }
 
 async function fetchJson(path) {
@@ -257,6 +258,9 @@ function renderStatus(status) {
     : "--";
   $("hot-experts").textContent = status.expert_summary
     ? `${status.expert_summary.hot}/${status.expert_summary.total}`
+    : "--";
+  $("workspace-slots").textContent = status.cognitive_core
+    ? status.cognitive_core.workspace_slots
     : "--";
   renderSummary(status.file_queue || {});
   $("tool-list").replaceChildren(...(status.tools || []).map((name) => chip(name)));
@@ -335,10 +339,39 @@ function renderResult(result) {
   $("novelty-value").textContent = fmt(activation.novelty);
   renderCircuits(activation);
   renderTraces(result.tool_results || []);
+  renderCognitivePanel(metadata.cognitive_core || null);
   const sensory = metadata.sensory_event
     ? `${metadata.sensory_event.modalities.join("+")} bind ${fmt(metadata.sensory_event.binding_score)}`
     : "interaction";
   addLog("résultat", `${sensory} · conf ${fmt(activation.confidence)} · sal ${fmt(metadata.salience)}`);
+}
+
+function renderCognitivePanel(workspace) {
+  if (!workspace) {
+    $("workspace-action").textContent = "--";
+    $("uncertainty-value").textContent = "--";
+    $("surprise-value").textContent = "--";
+    $("workspace-mode").textContent = "--";
+    $("workspace-focus").innerHTML = '<span class="empty">aucun état</span>';
+    return;
+  }
+  const prediction = workspace.prediction || {};
+  $("workspace-action").textContent = prediction.predicted_action || "--";
+  $("uncertainty-value").textContent = fmt(workspace.uncertainty);
+  $("surprise-value").textContent = fmt(workspace.surprise);
+  $("workspace-slots").textContent = workspace.slot_count || (workspace.slots || []).length || "--";
+  $("workspace-mode").textContent = workspace.mode || "--";
+  const focus = workspace.attention_focus || [];
+  if (!focus.length) {
+    $("workspace-focus").innerHTML = '<span class="empty">aucun focus</span>';
+    return;
+  }
+  $("workspace-focus").replaceChildren(...focus.slice(0, 6).map((item, index) => {
+    const el = document.createElement("article");
+    el.className = "trace";
+    el.innerHTML = `<strong>focus ${index + 1}</strong><p>${escapeHtml(item)}</p>`;
+    return el;
+  }));
 }
 
 function renderCircuits(activation) {

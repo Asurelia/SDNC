@@ -131,3 +131,27 @@ def test_training_file_queue_roundtrip(tmp_path):
     assert files[0].payload["label"] == "note"
     assert summary["done"] == 1
     memory.close()
+
+
+def test_cognitive_trace_roundtrip(tmp_path):
+    memory = PersistentMemory(tmp_path / "memory.sqlite3", embedding_dim=4)
+    trace_id = memory.store_cognitive_trace(
+        trace_id="trace-1",
+        episode_id="episode-1",
+        input_text="question humaine",
+        mode="think",
+        prediction={"predicted_action": "use_tools"},
+        observation={"successful_tools": ["memory_recall"]},
+        attention=["input", "memory"],
+        surprise=0.44,
+        uncertainty=0.58,
+        payload={"slot_count": 2},
+    )
+
+    traces = memory.recent_cognitive_traces(limit=1)
+
+    assert traces[0].id == trace_id
+    assert traces[0].prediction["predicted_action"] == "use_tools"
+    assert traces[0].attention == ["input", "memory"]
+    assert traces[0].surprise == 0.44
+    memory.close()

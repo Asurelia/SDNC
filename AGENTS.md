@@ -19,7 +19,7 @@ and feedback-driven plasticity.
 
 ## Important Files
 - `sdnc/agent/system.py` - observe -> sparse circuits -> tools -> memory -> local learning.
-- future `sdnc/agent/cognitive_core.py` - sparse global workspace that organizes attention, belief state, prediction traces, experts, memory, tools, and feedback without storing all knowledge itself.
+- `sdnc/agent/cognitive_core.py` - sparse global workspace that organizes attention, belief state, prediction traces, experts, memory, tools, and feedback without storing all knowledge itself.
 - `sdnc/agent/budget.py` - cognitive modes and hot/cold RAM/VRAM estimates.
 - `sdnc/agent/context_lod.py` - long-context compression into summaries/prototypes.
 - `sdnc/agent/experts.py` - lifecycle for self-created experts and hot/cold residency.
