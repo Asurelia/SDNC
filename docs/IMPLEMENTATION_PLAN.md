@@ -1,5 +1,10 @@
 # SDNC Interaction Plan
 
+For the full phase-by-phase roadmap to finish the SDNC model, including
+predictive coding, active inference, compressed expert atlas, replay/sleep,
+evaluation, UI, packaging, and stretch research, see
+`docs/COMPLETE_MODEL_ROADMAP.md`.
+
 ## V1 Delivered
 
 - Runnable autonomous interaction package in `sdnc/agent`.

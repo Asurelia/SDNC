@@ -35,6 +35,7 @@ and feedback-driven plasticity.
 - `sdnc/agent/web.py` and `sdnc/agent/static/` - local browser UI and JSON API.
 - `sdnc/core/` - liquid/CfC/NCP circuit experiments.
 - `docs/ARCHITECTURE.md` - current architecture.
+- `docs/COMPLETE_MODEL_ROADMAP.md` - precise phase-by-phase plan to finish the SDNC model.
 - `docs/EFFICIENCY_STRATEGY.md` - how SDNC avoids transformer-style dense memory/compute.
 - `docs/NON_TRANSFORMER_ROADMAP.md` - translates transformer-era compression into SDNC-native research milestones.
 - `docs/DATASET_SOURCES.md` - Hugging Face datasets suitable for SDNC-style experience learning.

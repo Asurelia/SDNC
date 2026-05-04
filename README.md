@@ -151,6 +151,7 @@ Voir:
 
 - [Architecture actuelle](docs/ARCHITECTURE.md)
 - [Plan d'implementation](docs/IMPLEMENTATION_PLAN.md)
+- [Roadmap complete du modele](docs/COMPLETE_MODEL_ROADMAP.md)
 - [Strategie d'efficacite](docs/EFFICIENCY_STRATEGY.md)
 - [Roadmap non-transformer](docs/NON_TRANSFORMER_ROADMAP.md)
 - [Sources de datasets](docs/DATASET_SOURCES.md)
