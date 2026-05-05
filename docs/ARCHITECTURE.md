@@ -45,6 +45,10 @@ does not replace the specialized circuits.
   `ask_feedback`, and `investigate_gap` with a practical expected-free-energy
   approximation. It does not execute hidden reasoning; it exposes the chosen
   action and rejected candidates in interaction metadata and cognitive traces.
+- `ExpertAtlas`: defines compressed expert payloads for `procedure`,
+  `prototype`, `low_rank`, `sparse_delta`, and `codebook` experts. Each payload
+  has L0/L1/L2 decode views, byte size, decode cost, hot RAM/VRAM hints, and a
+  checksum.
 - `ExpertManager`: manages self-created experts as living assets with
   probation, active, hot/cold, and retired states.
 - `LocalCircuitLearner`: maintains circuit keys, liquid state, usage counters,
@@ -123,11 +127,14 @@ The expert registry is stored locally in SQLite:
 - `experts.utility`: moving usefulness score;
 - `experts.hot`: whether it is currently resident in the hot path;
 - `estimated_vram_gb` / `estimated_ram_gb`: budget hints;
-- `payload_json`: source traces, tool names, and evidence.
+- `payload_json`: source traces, tool names, evidence, and optional
+  `expert_payload` atlas data.
 
 Accepted self-directed learning creates or reinforces procedure experts. During
 interaction, `ExpertManager` retrieves the most relevant experts and heats only
-the subset allowed by the current cognitive budget.
+the subset allowed by the current cognitive budget. New procedure experts store
+a deterministic atlas payload; the UI metadata can inspect L0 identity, L1
+sketches, and L2 evidence without making the cognitive core a source of truth.
 
 ## Self-Improvement
 

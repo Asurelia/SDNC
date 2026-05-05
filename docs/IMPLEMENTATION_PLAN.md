@@ -35,6 +35,9 @@ evaluation, UI, packaging, and stretch research, see
 - Context LOD replaces dense long-context handling with summaries/prototypes.
 - Self-managed expert lifecycle: verified learning can create procedure
   experts, select a hot subset, cool unused experts, and retire weak ones.
+- First compressed expert atlas: procedure/prototype/low-rank/sparse-delta/
+  codebook payloads with `L0/L1/L2` decode views, checksums, byte size, decode
+  cost, and hot RAM/VRAM hints.
 - Local web UI with chat, sensory observation, circuits, traces, memory,
   feedback, and improve controls.
 - Beginner-oriented training dashboard with drag/drop file queue, batch
@@ -58,11 +61,13 @@ evaluation, UI, packaging, and stretch research, see
    - memory retrieval should improve across sessions;
    - `/learn` should create fewer gaps after successful consolidation;
    - add multimodal recall, expert promotion/rejection, and replay tests.
-2. Add real expert payloads behind the lifecycle:
-   - quantized expert pack format;
-   - LRU residency manager;
-   - explicit RAM/VRAM eviction traces.
-   - neural/adapted expert loading instead of metadata-only procedure experts.
+2. Harden compressed expert residency:
+   - persist decode and eviction events;
+   - add LRU timestamps and prefetch scoring;
+   - move large cold payloads from SQLite JSON into atlas pack files when they
+     outgrow the local database;
+   - add optional neural/adapted expert loading once deterministic payloads are
+     benchmarked.
 3. Add richer local database tooling:
    - compaction/backup command for the SQLite memory file;
    - event replay command from `sync_events`;

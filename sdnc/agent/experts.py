@@ -14,6 +14,12 @@ import numpy as np
 
 from sdnc.agent.budget import CognitiveBudget
 from sdnc.agent.config import AutonomousConfig
+from sdnc.agent.expert_atlas import (
+    DecodedExpert,
+    build_procedure_payload,
+    decode_payload,
+    payload_from_dict,
+)
 from sdnc.agent.memory import ExpertRecord, PersistentMemory
 
 
@@ -45,6 +51,32 @@ class ExpertManager:
         success: bool = True,
     ) -> str:
         status = "probation" if success else "candidate"
+        prepared_payload = dict(payload or {})
+        expert_payload = prepared_payload.get("expert_payload")
+        if expert_payload is None:
+            source_payload = {key: value for key, value in prepared_payload.items() if key != "expert_payload"}
+            if kind == "procedure":
+                expert_payload = build_procedure_payload(
+                    name=name,
+                    description=description,
+                    tool_name=str(source_payload.get("tool_name", "")),
+                    trigger_embedding=trigger_embedding,
+                    payload=source_payload,
+                    decode_level="L1",
+                )
+            else:
+                expert_payload = build_procedure_payload(
+                    name=name,
+                    description=description,
+                    trigger_embedding=trigger_embedding,
+                    payload=source_payload,
+                    decode_level="L0",
+                )
+            prepared_payload["expert_payload"] = expert_payload.to_dict()
+        else:
+            expert_payload = payload_from_dict(expert_payload)
+            prepared_payload["expert_payload"] = expert_payload.to_dict()
+
         return self.memory.upsert_expert(
             name=self._safe_name(name),
             kind=kind,
@@ -52,9 +84,9 @@ class ExpertManager:
             trigger_embedding=trigger_embedding,
             status=status,
             success=success,
-            payload=payload or {},
-            estimated_vram_gb=self.config.avg_hot_expert_vram_gb,
-            estimated_ram_gb=self.config.avg_hot_expert_ram_gb,
+            payload=prepared_payload,
+            estimated_vram_gb=expert_payload.hot_vram_gb,
+            estimated_ram_gb=expert_payload.hot_ram_gb,
             hot=False,
         )
 
@@ -73,6 +105,8 @@ class ExpertManager:
         hot_ram = 0.0
         for expert in candidates:
             if expert.status == "retired":
+                continue
+            if self._has_invalid_payload(expert):
                 continue
             if len(selected) >= budget.max_hot_experts:
                 break
@@ -106,6 +140,12 @@ class ExpertManager:
             total_hot_vram_gb=round(hot_vram, 4),
             total_hot_ram_gb=round(hot_ram, 4),
         )
+
+    def decode_expert(self, expert: ExpertRecord, level: str = "L2") -> DecodedExpert | None:
+        raw_payload = expert.payload.get("expert_payload")
+        if not isinstance(raw_payload, dict):
+            return None
+        return decode_payload(raw_payload, level=level)
 
     def record_outcome(self, experts: list[ExpertRecord], success: bool) -> None:
         for expert in experts:
@@ -146,6 +186,16 @@ class ExpertManager:
             and expert.failure_count >= self.config.expert_retire_failures
             and expert.utility < self.config.expert_min_utility
         )
+
+    def _has_invalid_payload(self, expert: ExpertRecord) -> bool:
+        raw_payload = expert.payload.get("expert_payload")
+        if raw_payload is None:
+            return False
+        try:
+            decoded = decode_payload(raw_payload, level="L0")
+        except (KeyError, TypeError, ValueError):
+            return True
+        return not decoded.integrity_ok
 
     def _safe_name(self, name: str) -> str:
         cleaned = re.sub(r"[^A-Za-z0-9_.:-]+", "-", name.strip().lower())

@@ -40,7 +40,8 @@ L'agent actuel sait:
 - ingerer des observations texte, image, audio et video sous forme de signaux
   sensoriels compacts;
 - gerer une file locale de fichiers d'entrainement depuis l'interface web;
-- creer, tester, promouvoir, refroidir ou rejeter des experts;
+- creer, tester, promouvoir, refroidir ou rejeter des experts avec payloads
+  compresses, checksums et decode `L0/L1/L2`;
 - lancer une evaluation locale qui mesure routing outil, memoire, surprise,
   latence, budget chaud et respect du ratio sparse;
 - journaliser les evenements pour le monitoring local.
@@ -122,6 +123,7 @@ Observation
   -> LocalCircuitLearner
   -> Sparse Cognitive Core / Global Workspace
   -> ExpertManager
+  -> ExpertAtlas payload decode
   -> ToolRegistry
   -> PersistentMemory
   -> feedback / self-improvement
@@ -156,6 +158,11 @@ coeur chaud 6-9B
 + verification locale
 + decompression L0/L1/L2 a la demande
 ```
+
+Le premier atlas concret vit dans `sdnc/agent/expert_atlas.py`. Il supporte
+des payloads `procedure`, `prototype`, `low_rank`, `sparse_delta` et
+`codebook`, avec checksum, taille en octets, cout de decode estime et hints
+RAM/VRAM pour eviter de chauffer un expert trop cher.
 
 Voir:
 

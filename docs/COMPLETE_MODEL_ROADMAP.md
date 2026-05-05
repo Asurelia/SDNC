@@ -1,6 +1,6 @@
 # SDNC Complete Model Roadmap
 
-Last updated: 2026-05-04.
+Last updated: 2026-05-05.
 
 This roadmap defines what "finish the model" means for SDNC. SDNC is not
 finished when it can chat once. It is finished when it can learn from
@@ -223,6 +223,25 @@ Tasks:
 - Add deterministic decompressor first, learned neural decompressor later.
 - Add expert integrity checks and payload checksums.
 - Persist every promotion, rejection, decode, eviction, and verifier result.
+
+Implemented first slice, 2026-05-05:
+
+- `sdnc/agent/expert_atlas.py` defines deterministic payload builders for
+  `procedure`, `prototype`, `low_rank`, `sparse_delta`, and `codebook`.
+- Payloads expose `L0` identity, `L1` sketch, and `L2` materialized evidence or
+  factors, plus byte size, decode cost, checksum, hot RAM, and hot VRAM hints.
+- `ExpertManager.create_from_learning` now stores atlas payloads for learned
+  procedure experts and uses payload cost estimates for hot residency.
+- Interaction metadata reports payload summary and checksum integrity for hot
+  experts.
+
+Still open:
+
+- Persist explicit decode/eviction events in `sync_events`.
+- Add true LRU timestamps and prefetch scoring.
+- Move large payloads into external atlas pack files.
+- Benchmark learned decompressor experiments only after deterministic payloads
+  have measurable value.
 
 Acceptance criteria:
 

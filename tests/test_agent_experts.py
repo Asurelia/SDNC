@@ -72,6 +72,11 @@ def test_expert_manager_selects_hot_under_budget(tmp_path):
 
     assert len(report.selected_hot) <= budget.max_hot_experts
     assert all(expert.hot for expert in memory.list_experts() if expert.id in {item.id for item in report.selected_hot})
+    assert report.selected_hot[0].payload["expert_payload"]["kind"] == "procedure"
+    decoded = manager.decode_expert(report.selected_hot[0], level="L1")
+    assert decoded is not None
+    assert decoded.integrity_ok
+    assert decoded.data["trigger_sketch"]["dim"] == 8
     memory.close()
 
 
@@ -111,5 +116,11 @@ def test_learning_cycle_creates_probation_expert(tmp_path):
 
         assert report.consolidated >= 1
         assert any(expert.kind == "procedure" and "calculator" in expert.name for expert in experts)
+        created = next(expert for expert in experts if expert.kind == "procedure" and "calculator" in expert.name)
+        assert created.payload["expert_payload"]["decode_level"] == "L1"
+        decoded = system.expert_manager.decode_expert(created, level="L2")
+        assert decoded is not None
+        assert decoded.integrity_ok
+        assert decoded.data["evidence"]["tool_name"] == "calculator"
     finally:
         system.close()

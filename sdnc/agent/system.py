@@ -16,6 +16,7 @@ from sdnc.agent.config import AutonomousConfig
 from sdnc.agent.context_lod import ContextLODCompressor
 from sdnc.agent.cognitive_core import CognitiveCore, CognitiveWorkspace
 from sdnc.agent.encoding import HashingExperienceEncoder
+from sdnc.agent.expert_atlas import payload_summary
 from sdnc.agent.experts import ExpertManager
 from sdnc.agent.learning import LearningCycleReport, SelfDirectedLearner
 from sdnc.agent.memory import PersistentMemory, TrainingFileRecord
@@ -1119,6 +1120,7 @@ def _expert_report_payload(report) -> dict[str, Any]:
                 "similarity": expert.similarity,
                 "estimated_vram_gb": expert.estimated_vram_gb,
                 "estimated_ram_gb": expert.estimated_ram_gb,
+                "payload": _expert_payload_summary(expert.payload),
             }
             for expert in report.selected_hot
         ],
@@ -1127,6 +1129,16 @@ def _expert_report_payload(report) -> dict[str, Any]:
         "total_hot_vram_gb": report.total_hot_vram_gb,
         "total_hot_ram_gb": report.total_hot_ram_gb,
     }
+
+
+def _expert_payload_summary(payload: dict[str, Any]) -> dict[str, Any] | None:
+    raw_payload = payload.get("expert_payload") if isinstance(payload, dict) else None
+    if not isinstance(raw_payload, dict):
+        return None
+    try:
+        return payload_summary(raw_payload)
+    except (KeyError, TypeError, ValueError):
+        return {"integrity_ok": False, "error": "invalid expert payload"}
 
 
 def _cognitive_workspace_payload(workspace: CognitiveWorkspace) -> dict[str, Any]:

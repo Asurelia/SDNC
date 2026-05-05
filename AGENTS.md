@@ -23,6 +23,7 @@ and feedback-driven plasticity.
 - `sdnc/agent/cognitive_core.py` - sparse global workspace that organizes attention, belief state, prediction traces, experts, memory, tools, and feedback without storing all knowledge itself.
 - `sdnc/agent/budget.py` - cognitive modes and hot/cold RAM/VRAM estimates.
 - `sdnc/agent/context_lod.py` - long-context compression into summaries/prototypes.
+- `sdnc/agent/expert_atlas.py` - compressed expert payloads, L0/L1/L2 decode, checksums, hot cost hints.
 - `sdnc/agent/experts.py` - lifecycle for self-created experts and hot/cold residency.
 - `sdnc/agent/plasticity.py` - Oja-style local circuit updates and sparse activation.
 - `sdnc/agent/memory.py` - SQLite episodic/procedural memory.
