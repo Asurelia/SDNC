@@ -45,6 +45,7 @@ L'agent actuel sait:
 - lancer une evaluation locale qui mesure routing outil, memoire, surprise,
   latence, budget chaud et respect du ratio sparse;
 - lancer un cycle de sommeil/replay borne pour consolider les episodes utiles;
+- extraire des regles neuro-symboliques avec provenance et contre-exemples;
 - journaliser les evenements pour le monitoring local.
 
 ## Installation
@@ -90,6 +91,10 @@ python -m sdnc.agent.cli --workspace .
 Dans la console, `/sleep-preview` inspecte les episodes qui seraient rejoues et
 `/sleep` lance une consolidation bornee.
 
+`/rules` lance une consolidation neuro-symbolique: les traces verifiees peuvent
+devenir des regles locales, et les contre-exemples les affaiblissent au lieu de
+les remplacer silencieusement.
+
 Lancer l'interface web locale:
 
 ```powershell
@@ -131,6 +136,7 @@ Observation
   -> ToolRegistry
   -> PersistentMemory
   -> SleepConsolidationCycle
+  -> RuleEngine
   -> feedback / self-improvement
 ```
 

@@ -357,6 +357,28 @@ Tasks:
 - Add memory compaction that preserves provenance and rejection evidence.
 - Add UI for rule inspection, disable/enable, and manual feedback.
 
+Implemented first slice, 2026-05-06:
+
+- `sdnc/agent/rules.py` adds `RuleEngine`, `RuleMatch`, and
+  `RuleConsolidationReport`.
+- SQLite now has a `rules` table with trigger pattern, preconditions,
+  action/tool, expected outcome, confidence, status, provenance, counterexamples,
+  and payload.
+- Repeated verified tool traces can be promoted into enabled rules.
+- Counterexamples weaken existing rules and can reject them when confidence gets
+  too low.
+- Interaction metadata reports matched rules, and rule matches can influence
+  tool candidate selection.
+- CLI `/rules`, API `POST /api/rules/consolidate`, and web status
+  `rule_summary` expose the first controls.
+
+Still open:
+
+- Attach rules directly to expert payloads and sensory prototypes.
+- Add disable/enable/manual feedback controls in the web UI.
+- Add memory compaction that preserves rule provenance and rejection evidence.
+- Add richer contradiction forking when two useful but incompatible rules exist.
+
 Acceptance criteria:
 
 - SDNC can explain which memory/rule/expert influenced an answer.

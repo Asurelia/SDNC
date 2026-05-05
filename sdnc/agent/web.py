@@ -216,6 +216,9 @@ def build_handler(app: SDNCWebApp):
                     batch_size=int(payload["batch_size"]) if payload.get("batch_size") else None,
                 )
                 self._send_json({"report": report.to_payload(), "status": self._status_payload()})
+            elif parsed.path == "/api/rules/consolidate":
+                report = app.system.run_rule_consolidation()
+                self._send_json({"report": report.to_payload(), "status": self._status_payload()})
             elif parsed.path == "/api/learn-gap":
                 report = app.system.learn_from_last_gap()
                 self._send_json({"report": _learning_report_payload(report), "status": self._status_payload()})
@@ -276,6 +279,7 @@ def build_handler(app: SDNCWebApp):
                     )
                 ),
                 "expert_summary": app.system.expert_manager.summary(),
+                "rule_summary": app.system.rule_summary(),
                 "file_queue": app.system.training_file_summary(),
                 "cognitive_core": {
                     "workspace_slots": config.cognitive_workspace_slots,

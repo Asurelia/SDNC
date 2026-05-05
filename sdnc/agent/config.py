@@ -69,6 +69,15 @@ class AutonomousConfig:
     replay_strength: float = 0.35
     replay_max_drift: float = 0.08
 
+    # Neuro-symbolic rules. Rules are local, provenance-backed hints for
+    # routing and explanation; contradictory evidence weakens them.
+    rule_recent_limit: int = 300
+    rule_min_evidence: int = 2
+    rule_min_confidence: float = 0.62
+    rule_match_similarity: float = 0.58
+    rule_counterexample_penalty: float = 0.14
+    rule_success_boost: float = 0.08
+
     # Self-directed learning. External advisors are disabled unless explicitly
     # configured; sources provide hypotheses, never direct truth.
     lack_novelty_threshold: float = 0.55

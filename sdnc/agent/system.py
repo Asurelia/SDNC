@@ -31,6 +31,7 @@ from sdnc.agent.perception import PerceptionBus, SensoryEvent
 from sdnc.agent.planner import ActionPlan, ActionPlanner
 from sdnc.agent.plasticity import LocalCircuitLearner
 from sdnc.agent.replay import SleepConsolidationCycle, SleepReport
+from sdnc.agent.rules import RuleConsolidationReport, RuleEngine, RuleMatch
 from sdnc.agent.self_improvement import ImprovementReport, SelfImprovementCycle
 from sdnc.agent.sync import ConvexEventMirror, NullEventMirror, SafeEventMirror
 from sdnc.agent.tools import (
@@ -97,6 +98,7 @@ class InteractionLearningSystem:
         self.registry = registry or self._default_registry()
         self.improver = SelfImprovementCycle(self.config, self.memory, self.learner)
         self.sleeper = SleepConsolidationCycle(self.config, self.memory, self.learner)
+        self.rule_engine = RuleEngine(self.config, self.memory)
         self.gap_learner = SelfDirectedLearner(
             self.config,
             self.memory,
@@ -145,12 +147,14 @@ class InteractionLearningSystem:
         expert_report = self.expert_manager.select_for_interaction(embedding, budget)
         activation = self.learner.activate(embedding)
         memories = self.memory.retrieve_similar(embedding, top_k=budget.memory_top_k)
+        rule_matches = self.rule_engine.match(embedding, top_k=5)
 
         tool_names = self._choose_tools(
             text,
             embedding,
             activation_confidence=activation.confidence,
             max_tool_calls=budget.max_tool_calls,
+            rule_matches=rule_matches,
         )
         workspace = self.cognitive_core.start(
             input_text=text,
@@ -178,6 +182,7 @@ class InteractionLearningSystem:
             "cognitive_workspace": workspace,
             "action_plan": action_plan,
             "active_experts": expert_report.selected_hot,
+            "active_rules": rule_matches,
         }
         tool_results = self._run_tools(planned_tool_names, text, tool_context)
 
@@ -227,6 +232,12 @@ class InteractionLearningSystem:
                 )
             self._persist_cognitive_trace(workspace, episode_id, text, action_plan=action_plan)
             self._learn_tool_preferences(text, embedding, tool_results, feedback)
+            if episode_id:
+                self.rule_engine.record_rule_outcomes(
+                    rule_matches,
+                    successful_tools={result.tool_name for result in tool_results if result.success},
+                    episode_id=episode_id,
+                )
             self._interactions_since_improvement += 1
             improvement_report = self._maybe_self_improve()
             self.learner.save(self.config.state_path)
@@ -253,6 +264,7 @@ class InteractionLearningSystem:
                 "context_lod": _context_payload(context_packet),
                 "resource_budget": _resource_payload(resource_snapshot),
                 "expert_lifecycle": _expert_report_payload(expert_report),
+                "neuro_symbolic_rules": _rule_matches_payload(rule_matches),
                 "cognitive_core": _cognitive_workspace_payload(workspace),
                 "action_plan": action_plan.to_payload(),
             },
@@ -274,6 +286,7 @@ class InteractionLearningSystem:
                 "context_compression_ratio": context_packet.compression_ratio,
                 "hot_vram_gb": resource_snapshot.hot_vram_gb,
                 "hot_experts": [expert.name for expert in expert_report.selected_hot],
+                "rules": [match.rule.name for match in rule_matches],
                 "cognitive_trace_id": workspace.id,
                 "uncertainty": workspace.uncertainty,
                 "surprise": workspace.surprise,
@@ -330,12 +343,14 @@ class InteractionLearningSystem:
         activation = self.learner.activate(event.embedding)
         memories = self.memory.retrieve_similar(event.embedding, top_k=budget.memory_top_k)
         sensory_memories = self.memory.retrieve_sensory_bindings(event.embedding, top_k=min(5, budget.memory_top_k))
+        rule_matches = self.rule_engine.match(event.embedding, top_k=5)
         tool_names = (
             self._choose_tools(
                 event.summary,
                 event.embedding,
                 activation_confidence=activation.confidence,
                 max_tool_calls=budget.max_tool_calls,
+                rule_matches=rule_matches,
             )
             if use_tools
             else []
@@ -365,6 +380,7 @@ class InteractionLearningSystem:
             "cognitive_workspace": workspace,
             "action_plan": action_plan,
             "active_experts": expert_report.selected_hot,
+            "active_rules": rule_matches,
         }
         tool_results = self._run_tools(planned_tool_names, event.summary, tool_context)
         salience = float(
@@ -397,6 +413,12 @@ class InteractionLearningSystem:
                     salience=salience,
                 )
             self._persist_cognitive_trace(workspace, episode_id, event.summary, action_plan=action_plan)
+            if episode_id and use_tools:
+                self.rule_engine.record_rule_outcomes(
+                    rule_matches,
+                    successful_tools={result.tool_name for result in tool_results if result.success},
+                    episode_id=episode_id,
+                )
             self.memory.store_sensory_binding(
                 event_id=event.id,
                 episode_id=episode_id,
@@ -439,6 +461,7 @@ class InteractionLearningSystem:
                 "cognitive_budget": _budget_payload(budget),
                 "resource_budget": _resource_payload(resource_snapshot),
                 "expert_lifecycle": _expert_report_payload(expert_report),
+                "neuro_symbolic_rules": _rule_matches_payload(rule_matches),
                 "cognitive_core": _cognitive_workspace_payload(workspace),
                 "action_plan": action_plan.to_payload(),
             },
@@ -467,6 +490,7 @@ class InteractionLearningSystem:
                 "proposed_tools": tool_names,
                 "hot_vram_gb": resource_snapshot.hot_vram_gb,
                 "hot_experts": [expert.name for expert in expert_report.selected_hot],
+                "rules": [match.rule.name for match in rule_matches],
                 "cognitive_trace_id": workspace.id,
                 "uncertainty": workspace.uncertainty,
                 "surprise": workspace.surprise,
@@ -745,6 +769,40 @@ class InteractionLearningSystem:
         )
         return report
 
+    def run_rule_consolidation(self) -> RuleConsolidationReport:
+        """Extract provenance-backed rules from recent verified traces."""
+        report = self.rule_engine.consolidate_recent()
+        self._emit_event(
+            "rules",
+            {
+                **report.to_payload(),
+                "rule_summary": self.rule_summary(),
+            },
+        )
+        return report
+
+    def rule_summary(self) -> dict[str, Any]:
+        rules = self.memory.list_rules()
+        by_status: dict[str, int] = {}
+        for rule in rules:
+            by_status[rule.status] = by_status.get(rule.status, 0) + 1
+        return {
+            "total": len(rules),
+            "by_status": by_status,
+            "top": [
+                {
+                    "name": rule.name,
+                    "trigger_pattern": rule.trigger_pattern,
+                    "action_tool": rule.action_tool,
+                    "confidence": rule.confidence,
+                    "status": rule.status,
+                    "provenance_count": len(rule.provenance),
+                    "counterexample_count": len(rule.counterexamples),
+                }
+                for rule in rules[:8]
+            ],
+        }
+
     def learn_from_last_gap(self) -> LearningCycleReport:
         """Investigate the last interaction's weaknesses and consolidate proof."""
         if self._last_result is None:
@@ -835,6 +893,7 @@ class InteractionLearningSystem:
         embedding: np.ndarray,
         activation_confidence: float,
         max_tool_calls: int | None = None,
+        rule_matches: list[RuleMatch] | None = None,
     ) -> list[str]:
         lowered = text.lower()
         selected: list[str] = ["memory_recall"]
@@ -869,6 +928,9 @@ class InteractionLearningSystem:
         for procedure in self.memory.retrieve_procedures(embedding, top_k=3):
             if procedure.similarity > 0.55 and procedure.success_rate >= 0.5:
                 selected.append(procedure.tool_name)
+
+        for match in rule_matches or []:
+            selected.append(match.tool_name)
 
         deduped: list[str] = []
         for name in selected:
@@ -1159,6 +1221,10 @@ def _expert_payload_summary(payload: dict[str, Any]) -> dict[str, Any] | None:
         return payload_summary(raw_payload)
     except (KeyError, TypeError, ValueError):
         return {"integrity_ok": False, "error": "invalid expert payload"}
+
+
+def _rule_matches_payload(matches: list[RuleMatch]) -> list[dict[str, Any]]:
+    return [match.to_payload() for match in matches]
 
 
 def _cognitive_workspace_payload(workspace: CognitiveWorkspace) -> dict[str, Any]:

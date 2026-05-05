@@ -54,6 +54,9 @@ evaluation, UI, packaging, and stretch research, see
 - First Phase 4 sleep/replay cycle in `sdnc/agent/replay.py`: salience-ranked
   queue, preview mode, bounded local plasticity, drift guard, negative-feedback
   holdout, repeated procedure strengthening, CLI `/sleep`, and API `/api/sleep`.
+- First Phase 6 neuro-symbolic memory in `sdnc/agent/rules.py`: rules with
+  provenance/counterexamples/confidence, contradiction weakening, tool-routing
+  hints, CLI `/rules`, and API `/api/rules/consolidate`.
 - Archived the original Phase 1 spec in `docs/SDNC_PHASE1_SPEC.md`.
 
 ## Near-Term Hardening
@@ -85,20 +88,25 @@ evaluation, UI, packaging, and stretch research, see
    - run controlled read-only experiments against files/web/calculator;
    - record failed hypotheses as limits;
    - rank future experiments by uncertainty and usefulness.
-6. Upgrade sensory bridges:
+6. Harden neuro-symbolic rules:
+   - attach rules to expert payloads and sensory prototypes;
+   - add disable/enable/manual feedback controls;
+   - add provenance-preserving memory compaction;
+   - add contradiction forking when two rules both have useful evidence.
+7. Upgrade sensory bridges:
    - frozen CLIP image embedding -> autonomous interaction vector;
    - frozen Whisper/audio embedding -> autonomous interaction vector;
    - video keyframe/audio temporal summaries;
    - optional local file ingestion from browser/API paths;
    - no backprop through CLIP.
-7. Add salience replay:
+8. Add salience replay:
    - add scheduled/idle triggering around the manual sleep endpoint;
    - expose richer sleep controls in the web UI;
    - add replay benchmarks that prove performance improves without forgetting.
-8. Add tool safety profiles:
+9. Add tool safety profiles:
    - read-only default;
    - optional explicit write/execute tools later.
-9. Add export/import for memory and circuit state.
+10. Add export/import for memory and circuit state.
 
 ## Acceptance Criteria
 

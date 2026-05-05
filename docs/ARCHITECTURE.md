@@ -55,6 +55,10 @@ does not replace the specialized circuits.
   replays useful episodes with low-strength local plasticity, rejects negative
   feedback, detects excessive circuit drift, and strengthens repeated
   tool-success procedures.
+- `RuleEngine`: extracts provenance-backed neuro-symbolic rules from repeated
+  verified traces. Rules hold trigger patterns, preconditions, action/tool,
+  expected outcome, confidence, provenance, and counterexamples; they can
+  influence tool routing only while sufficiently confident.
 - `LocalCircuitLearner`: maintains circuit keys, liquid state, usage counters,
   and sparse inter-circuit weights. It activates at most 5 percent of circuits.
 - `PersistentMemory`: SQLite episodic and procedural memory. Episodes store
@@ -176,6 +180,24 @@ salient episodes
 Negative-feedback episodes are held out. Useful existing procedures are listed
 as protected before replay starts, and any replay that moves active circuit keys
 past the configured drift limit is restored and recorded as rejected.
+
+## Neuro-Symbolic Rules
+
+Rules are local routing hints extracted from repeated verified experience:
+
+```text
+episodes + tool traces
+  -> repeated successful pattern
+  -> rule with provenance and expected outcome
+  -> future tool-routing hint
+  -> counterexample weakens or rejects, never overwrites
+```
+
+The `rules` SQLite table stores confidence, status, provenance ids, and
+counterexample ids. During interaction, matched enabled rules are reported in
+`metadata.neuro_symbolic_rules` and may add their tool to the candidate set.
+This helps SDNC explain which learned rule influenced an action without making
+that rule a single source of truth.
 
 ## Self-Directed Learning
 

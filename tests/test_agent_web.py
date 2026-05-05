@@ -27,6 +27,7 @@ def test_web_api_status_and_interact(tmp_path):
         assert status["n_circuits"] == 20
         assert "calculator" in status["tools"]
         assert status["expert_summary"]["total"] == 0
+        assert status["rule_summary"]["total"] == 0
 
         result = _post_json(f"{base}/api/interact", {"text": "calcule 6 + 7", "mode": "think"})
         assert result["result"]["activation"]["active_count"] <= 1
@@ -81,12 +82,16 @@ def test_web_api_status_and_interact(tmp_path):
         assert sleep["report"]["preview"] is True
         assert "summary" in sleep["report"]
 
+        rules = _post_json(f"{base}/api/rules/consolidate", {})
+        assert rules["report"]["summary"].startswith("Rule consolidation:")
+
         events = _get_json(f"{base}/api/events")
         assert any(event["event_type"] == "interaction" for event in events["events"])
         assert any(event["event_type"] == "observation" for event in events["events"])
         assert any(event["event_type"] == "file" for event in events["events"])
         assert any(event["event_type"] == "learning" for event in events["events"])
         assert any(event["event_type"] == "sleep" for event in events["events"])
+        assert any(event["event_type"] == "rules" for event in events["events"])
 
         recent = _get_json(f"{base}/api/recent")
         assert any(binding["modalities"] == ["text", "image"] for binding in recent["sensory_bindings"])

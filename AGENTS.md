@@ -32,6 +32,7 @@ and feedback-driven plasticity.
 - `sdnc/agent/perception.py` - sensory signal binding into sparse multimodal events.
 - `sdnc/agent/planner.py` - active-inference-style action planner for answer/tool/feedback/gap choices.
 - `sdnc/agent/replay.py` - bounded sleep/replay consolidation for salient episodes and repeated tool successes.
+- `sdnc/agent/rules.py` - neuro-symbolic rules with provenance, counterexamples, confidence, and tool-routing hints.
 - `sdnc/agent/dataset_ingestion.py` - local/Hugging Face dataset rows as experiences.
 - `sdnc/agent/experience_packs.py` - compressed prototypes for experience packs.
 - `sdnc/agent/eval.py` - deterministic learning/sparsity/tool/memory evaluation harness.
@@ -69,6 +70,7 @@ and feedback-driven plasticity.
 - **ALWAYS** update `docs/EFFICIENCY_STRATEGY.md` when changing budget, context compression, or expert residency behavior.
 - **ALWAYS** create or reinforce experts only from verified learning evidence, not from one untested source claim.
 - **ALWAYS** record rejected self-improvement experiments; rejection is learning, not failure.
+- **ALWAYS** keep neuro-symbolic rules provenance-backed and weaken/fork them on counterexamples instead of overwriting evidence.
 - **ALWAYS** add or update tests when changing routing, plasticity, memory persistence, or tool selection.
 - Frozen encoders are allowed for perception; learning belongs in circuits/memory/procedures.
 

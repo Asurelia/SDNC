@@ -128,6 +128,25 @@ class CognitiveTraceRecord:
 
 
 @dataclass
+class RuleRecord:
+    """A provenance-backed neuro-symbolic routing rule."""
+
+    id: str
+    name: str
+    trigger_pattern: str
+    preconditions: dict[str, Any]
+    action_tool: str
+    expected_outcome: str
+    confidence: float
+    status: str
+    trigger_embedding: np.ndarray
+    provenance: list[str]
+    counterexamples: list[str]
+    payload: dict[str, Any]
+    similarity: float = 0.0
+
+
+@dataclass
 class ExpertRecord:
     """A self-managed SDNC expert asset."""
 
@@ -351,6 +370,158 @@ class PersistentMemory:
         with self._lock:
             self.conn.execute("DELETE FROM procedures WHERE id = ?", (procedure_id,))
             self.conn.commit()
+
+    def upsert_rule(
+        self,
+        name: str,
+        trigger_pattern: str,
+        preconditions: dict[str, Any],
+        action_tool: str,
+        expected_outcome: str,
+        trigger_embedding: np.ndarray,
+        confidence: float,
+        status: str = "enabled",
+        provenance: list[str] | None = None,
+        counterexamples: list[str] | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> str:
+        now = time()
+        provenance = provenance or []
+        counterexamples = counterexamples or []
+        payload = payload or {}
+        with self._lock:
+            existing = self.conn.execute("SELECT * FROM rules WHERE name = ?", (name,)).fetchone()
+            if existing:
+                rule_id = existing["id"]
+                old_provenance = json.loads(existing["provenance_json"] or "[]")
+                old_counterexamples = json.loads(existing["counterexamples_json"] or "[]")
+                merged_provenance = _dedupe_strings([*old_provenance, *provenance])
+                merged_counterexamples = _dedupe_strings([*old_counterexamples, *counterexamples])
+                self.conn.execute(
+                    """
+                    UPDATE rules
+                    SET trigger_pattern = ?, preconditions_json = ?, action_tool = ?,
+                        expected_outcome = ?, confidence = ?, status = ?,
+                        trigger_embedding = ?, updated_at = ?, provenance_json = ?,
+                        counterexamples_json = ?, payload_json = ?
+                    WHERE name = ?
+                    """,
+                    (
+                        trigger_pattern,
+                        json.dumps(preconditions, sort_keys=True, default=str),
+                        action_tool,
+                        expected_outcome,
+                        float(confidence),
+                        status,
+                        self._pack_vector(trigger_embedding),
+                        now,
+                        json.dumps(merged_provenance, sort_keys=True, default=str),
+                        json.dumps(merged_counterexamples, sort_keys=True, default=str),
+                        json.dumps(payload, sort_keys=True, default=str),
+                        name,
+                    ),
+                )
+            else:
+                rule_id = str(uuid.uuid4())
+                self.conn.execute(
+                    """
+                    INSERT INTO rules
+                        (id, name, trigger_pattern, preconditions_json, action_tool,
+                         expected_outcome, confidence, status, trigger_embedding,
+                         created_at, updated_at, provenance_json, counterexamples_json,
+                         payload_json)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        rule_id,
+                        name,
+                        trigger_pattern,
+                        json.dumps(preconditions, sort_keys=True, default=str),
+                        action_tool,
+                        expected_outcome,
+                        float(confidence),
+                        status,
+                        self._pack_vector(trigger_embedding),
+                        now,
+                        now,
+                        json.dumps(_dedupe_strings(provenance), sort_keys=True, default=str),
+                        json.dumps(_dedupe_strings(counterexamples), sort_keys=True, default=str),
+                        json.dumps(payload, sort_keys=True, default=str),
+                    ),
+                )
+            self.conn.commit()
+        return rule_id
+
+    def record_rule_evidence(
+        self,
+        rule_id: str,
+        success: bool,
+        episode_id: str,
+        confidence_delta: float,
+        counterexample: bool = False,
+    ) -> None:
+        with self._lock:
+            row = self.conn.execute("SELECT * FROM rules WHERE id = ?", (rule_id,)).fetchone()
+            if row is None:
+                return
+            provenance = json.loads(row["provenance_json"] or "[]")
+            counterexamples = json.loads(row["counterexamples_json"] or "[]")
+            if success:
+                provenance = _dedupe_strings([*provenance, episode_id])
+            if counterexample:
+                counterexamples = _dedupe_strings([*counterexamples, episode_id])
+            confidence = max(0.0, min(1.0, float(row["confidence"]) + float(confidence_delta)))
+            status = row["status"]
+            if confidence < 0.25 and counterexamples:
+                status = "rejected"
+            self.conn.execute(
+                """
+                UPDATE rules
+                SET confidence = ?, status = ?, updated_at = ?,
+                    provenance_json = ?, counterexamples_json = ?
+                WHERE id = ?
+                """,
+                (
+                    confidence,
+                    status,
+                    time(),
+                    json.dumps(provenance, sort_keys=True, default=str),
+                    json.dumps(counterexamples, sort_keys=True, default=str),
+                    rule_id,
+                ),
+            )
+            self.conn.commit()
+
+    def retrieve_rules(
+        self,
+        embedding: np.ndarray,
+        top_k: int = 5,
+        statuses: tuple[str, ...] = ("enabled",),
+    ) -> list[RuleRecord]:
+        placeholders = ",".join("?" for _ in statuses)
+        with self._lock:
+            rows = self.conn.execute(
+                f"SELECT * FROM rules WHERE status IN ({placeholders}) ORDER BY confidence DESC",
+                statuses,
+            ).fetchall()
+        query = self._unit(embedding)
+        rules = []
+        for row in rows:
+            trigger = self._unpack_vector(row["trigger_embedding"])
+            rules.append(self._row_to_rule(row, trigger, float(np.dot(query, self._unit(trigger)))))
+        rules.sort(key=lambda item: (item.similarity * 0.55 + item.confidence * 0.45), reverse=True)
+        return rules[:top_k]
+
+    def list_rules(self, status: str | None = None) -> list[RuleRecord]:
+        with self._lock:
+            if status is None:
+                rows = self.conn.execute("SELECT * FROM rules ORDER BY confidence DESC").fetchall()
+            else:
+                rows = self.conn.execute(
+                    "SELECT * FROM rules WHERE status = ? ORDER BY confidence DESC",
+                    (status,),
+                ).fetchall()
+        return [self._row_to_rule(row, self._unpack_vector(row["trigger_embedding"]), 0.0) for row in rows]
 
     def record_tool_result(self, tool_name: str, success: bool) -> None:
         with self._lock:
@@ -1071,6 +1242,23 @@ class PersistentMemory:
                 payload_json TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS rules (
+                id TEXT PRIMARY KEY,
+                name TEXT UNIQUE NOT NULL,
+                trigger_pattern TEXT NOT NULL,
+                preconditions_json TEXT NOT NULL,
+                action_tool TEXT NOT NULL,
+                expected_outcome TEXT NOT NULL,
+                confidence REAL NOT NULL,
+                status TEXT NOT NULL,
+                trigger_embedding BLOB NOT NULL,
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL,
+                provenance_json TEXT NOT NULL,
+                counterexamples_json TEXT NOT NULL,
+                payload_json TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS sync_events (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 timestamp REAL NOT NULL,
@@ -1111,6 +1299,10 @@ class PersistentMemory:
                 ON experts(hot);
             CREATE INDEX IF NOT EXISTS idx_experts_utility
                 ON experts(utility DESC);
+            CREATE INDEX IF NOT EXISTS idx_rules_status
+                ON rules(status);
+            CREATE INDEX IF NOT EXISTS idx_rules_confidence
+                ON rules(confidence DESC);
             """
             )
             self.conn.commit()
@@ -1200,6 +1392,23 @@ class PersistentMemory:
             payload=json.loads(row["payload_json"] or "{}"),
         )
 
+    def _row_to_rule(self, row: sqlite3.Row, embedding: np.ndarray, similarity: float) -> RuleRecord:
+        return RuleRecord(
+            id=row["id"],
+            name=row["name"],
+            trigger_pattern=row["trigger_pattern"],
+            preconditions=json.loads(row["preconditions_json"] or "{}"),
+            action_tool=row["action_tool"],
+            expected_outcome=row["expected_outcome"],
+            confidence=float(row["confidence"]),
+            status=row["status"],
+            trigger_embedding=embedding,
+            provenance=json.loads(row["provenance_json"] or "[]"),
+            counterexamples=json.loads(row["counterexamples_json"] or "[]"),
+            payload=json.loads(row["payload_json"] or "{}"),
+            similarity=similarity,
+        )
+
     def _row_to_expert(self, row: sqlite3.Row, embedding: np.ndarray, similarity: float) -> ExpertRecord:
         return ExpertRecord(
             id=row["id"],
@@ -1221,3 +1430,15 @@ class PersistentMemory:
     def _unit(self, vector: np.ndarray) -> np.ndarray:
         vector = np.asarray(vector, dtype=np.float32)
         return vector / max(float(np.linalg.norm(vector)), 1e-8)
+
+
+def _dedupe_strings(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for value in values:
+        item = str(value)
+        if not item or item in seen:
+            continue
+        seen.add(item)
+        deduped.append(item)
+    return deduped
