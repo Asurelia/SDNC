@@ -33,6 +33,9 @@ L'agent actuel sait:
 - persister ses episodes, procedures, lacunes, experts et traces;
 - utiliser des outils simples: memoire, recherche fichier, lecture fichier,
   calculatrice, recherche web optionnelle;
+- classer des actions possibles avec un planner d'active inference leger:
+  repondre, rappeler la memoire, utiliser des outils, demander du feedback ou
+  noter une lacune;
 - recevoir du feedback et modifier seulement les circuits actifs;
 - ingerer des observations texte, image, audio et video sous forme de signaux
   sensoriels compacts;

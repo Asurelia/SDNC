@@ -25,6 +25,7 @@ def test_default_evaluation_reports_learning_and_sparse_budget(tmp_path):
     assert payload["summary"]["max_active_ratio"] <= 0.05
     assert payload["summary"]["repeat_success_rate"] >= payload["summary"]["initial_success_rate"]
     assert payload["summary"]["memory_hit_delta"] >= 0.0
+    assert payload["summary"]["planner_actions"]["use_tools"] >= 2
     assert len(payload["case_runs"]) == 6
     assert any(run["case_name"] == "arithmetic_tool_routing" and run["success"] for run in payload["case_runs"])
     assert any(run["case_name"] == "file_search_routing" and run["success"] for run in payload["case_runs"])
@@ -32,6 +33,7 @@ def test_default_evaluation_reports_learning_and_sparse_budget(tmp_path):
         run["case_name"] == "repeated_memory"
         and run["pass_name"] == "repeat"
         and run["memory_hits"] >= 1
+        and run["planner_action"]
         for run in payload["case_runs"]
     )
     assert rendered["summary"]["total_runs"] == payload["summary"]["total_runs"]

@@ -27,6 +27,7 @@ from sdnc.agent.multimodal import (
     ModalitySample,
 )
 from sdnc.agent.perception import PerceptionBus, SensoryEvent
+from sdnc.agent.planner import ActionPlan, ActionPlanner
 from sdnc.agent.plasticity import LocalCircuitLearner
 from sdnc.agent.self_improvement import ImprovementReport, SelfImprovementCycle
 from sdnc.agent.sync import ConvexEventMirror, NullEventMirror, SafeEventMirror
@@ -84,6 +85,7 @@ class InteractionLearningSystem:
             similarity_threshold=self.config.context_lod_similarity,
         )
         self.cognitive_core = CognitiveCore(self.config)
+        self.action_planner = ActionPlanner(self.config)
         self.multimodal_encoder = LocalMultimodalEncoder(self.config.input_dim)
         self.perception = PerceptionBus(self.multimodal_encoder, self.encoder)
         self.memory = PersistentMemory(self.config.memory_path, self.config.input_dim)
@@ -156,6 +158,13 @@ class InteractionLearningSystem:
             experts=expert_report.selected_hot,
             context_summary=context_packet.global_summary,
         )
+        action_plan = self.action_planner.plan(
+            workspace,
+            available_tools=tool_names,
+            memory_count=len(memories),
+            hot_expert_count=len(expert_report.selected_hot),
+        )
+        planned_tool_names = self._tool_names_for_plan(tool_names, action_plan)
         tool_context = {
             **enriched_context,
             "embedding": embedding,
@@ -164,9 +173,10 @@ class InteractionLearningSystem:
             "context_packet": context_packet,
             "cognitive_budget": budget,
             "cognitive_workspace": workspace,
+            "action_plan": action_plan,
             "active_experts": expert_report.selected_hot,
         }
-        tool_results = self._run_tools(tool_names, text, tool_context)
+        tool_results = self._run_tools(planned_tool_names, text, tool_context)
 
         salience = self._salience(activation.novelty, memories, tool_results, feedback)
         feedback_score = feedback.clipped_score() if feedback else None
@@ -192,13 +202,15 @@ class InteractionLearningSystem:
                     "__sdnc": {
                         "confidence": activation.confidence,
                         "novelty": activation.novelty,
-                        "tool_names": tool_names,
+                        "tool_names": planned_tool_names,
+                        "proposed_tool_names": tool_names,
                         "successful_tools": [
                             result.tool_name for result in tool_results if result.success
                         ],
                         "cognitive_trace_id": workspace.id,
                         "surprise": workspace.surprise,
                         "uncertainty": workspace.uncertainty,
+                        "action_plan": action_plan.to_payload(),
                     },
                 }
                 episode_id = self.memory.store_episode(
@@ -210,7 +222,7 @@ class InteractionLearningSystem:
                     outcome=outcome,
                     feedback_score=feedback_score,
                 )
-            self._persist_cognitive_trace(workspace, episode_id, text)
+            self._persist_cognitive_trace(workspace, episode_id, text, action_plan=action_plan)
             self._learn_tool_preferences(text, embedding, tool_results, feedback)
             self._interactions_since_improvement += 1
             improvement_report = self._maybe_self_improve()
@@ -230,7 +242,8 @@ class InteractionLearningSystem:
             learned=learn,
             metadata={
                 "salience": salience,
-                "tool_names": tool_names,
+                "tool_names": planned_tool_names,
+                "proposed_tool_names": tool_names,
                 "improvement_report": improvement_report,
                 "n_circuits": self.config.n_circuits,
                 "cognitive_budget": _budget_payload(budget),
@@ -238,6 +251,7 @@ class InteractionLearningSystem:
                 "resource_budget": _resource_payload(resource_snapshot),
                 "expert_lifecycle": _expert_report_payload(expert_report),
                 "cognitive_core": _cognitive_workspace_payload(workspace),
+                "action_plan": action_plan.to_payload(),
             },
         )
         self._last_result = result
@@ -251,7 +265,8 @@ class InteractionLearningSystem:
                 "confidence": activation.confidence,
                 "novelty": activation.novelty,
                 "salience": salience,
-                "tools": tool_names,
+                "tools": planned_tool_names,
+                "proposed_tools": tool_names,
                 "mode": budget.mode,
                 "context_compression_ratio": context_packet.compression_ratio,
                 "hot_vram_gb": resource_snapshot.hot_vram_gb,
@@ -260,6 +275,8 @@ class InteractionLearningSystem:
                 "uncertainty": workspace.uncertainty,
                 "surprise": workspace.surprise,
                 "attention_focus": list(workspace.attention_focus),
+                "planner_action": action_plan.selected.action,
+                "planner_score": action_plan.selected.score,
             },
         )
         return result
@@ -329,6 +346,13 @@ class InteractionLearningSystem:
             experts=expert_report.selected_hot,
             context_summary=f"{event.source} {'+'.join(event.modalities)}",
         )
+        action_plan = self.action_planner.plan(
+            workspace,
+            available_tools=tool_names,
+            memory_count=len(memories),
+            hot_expert_count=len(expert_report.selected_hot),
+        )
+        planned_tool_names = self._tool_names_for_plan(tool_names, action_plan)
         tool_context = {
             **observation_context,
             "embedding": event.embedding,
@@ -336,9 +360,10 @@ class InteractionLearningSystem:
             "memories": memories,
             "sensory_memories": sensory_memories,
             "cognitive_workspace": workspace,
+            "action_plan": action_plan,
             "active_experts": expert_report.selected_hot,
         }
-        tool_results = self._run_tools(tool_names, event.summary, tool_context)
+        tool_results = self._run_tools(planned_tool_names, event.summary, tool_context)
         salience = float(
             np.clip(
                 0.65 * self._salience(activation.novelty, memories, tool_results, feedback=None)
@@ -368,7 +393,7 @@ class InteractionLearningSystem:
                     active_circuits=activation.indices,
                     salience=salience,
                 )
-            self._persist_cognitive_trace(workspace, episode_id, event.summary)
+            self._persist_cognitive_trace(workspace, episode_id, event.summary, action_plan=action_plan)
             self.memory.store_sensory_binding(
                 event_id=event.id,
                 episode_id=episode_id,
@@ -399,7 +424,8 @@ class InteractionLearningSystem:
             learned=learn,
             metadata={
                 "salience": salience,
-                "tool_names": tool_names,
+                "tool_names": planned_tool_names,
+                "proposed_tool_names": tool_names,
                 "improvement_report": improvement_report,
                 "n_circuits": self.config.n_circuits,
                 "modality": event.modalities[0] if len(event.modalities) == 1 else "+".join(event.modalities),
@@ -411,6 +437,7 @@ class InteractionLearningSystem:
                 "resource_budget": _resource_payload(resource_snapshot),
                 "expert_lifecycle": _expert_report_payload(expert_report),
                 "cognitive_core": _cognitive_workspace_payload(workspace),
+                "action_plan": action_plan.to_payload(),
             },
         )
         self._last_result = result
@@ -433,12 +460,16 @@ class InteractionLearningSystem:
                 "novelty": activation.novelty,
                 "salience": salience,
                 "mode": budget.mode,
+                "tools": planned_tool_names,
+                "proposed_tools": tool_names,
                 "hot_vram_gb": resource_snapshot.hot_vram_gb,
                 "hot_experts": [expert.name for expert in expert_report.selected_hot],
                 "cognitive_trace_id": workspace.id,
                 "uncertainty": workspace.uncertainty,
                 "surprise": workspace.surprise,
                 "attention_focus": list(workspace.attention_focus),
+                "planner_action": action_plan.selected.action,
+                "planner_score": action_plan.selected.score,
             },
         )
         return result
@@ -734,8 +765,11 @@ class InteractionLearningSystem:
         workspace: CognitiveWorkspace,
         episode_id: str,
         input_text: str,
+        action_plan: ActionPlan | None = None,
     ) -> None:
         payload = workspace.to_payload()
+        if action_plan is not None:
+            payload["action_plan"] = action_plan.to_payload()
         self.memory.store_cognitive_trace(
             trace_id=workspace.id,
             episode_id=episode_id,
@@ -828,6 +862,15 @@ class InteractionLearningSystem:
         context: dict[str, Any],
     ) -> list[ToolResult]:
         return [self.registry.run(name, text, context) for name in names]
+
+    def _tool_names_for_plan(self, proposed: list[str], action_plan: ActionPlan) -> list[str]:
+        if action_plan.selected.action == "use_tools":
+            selected = ["memory_recall", *action_plan.selected.tool_names]
+        elif action_plan.selected.action == "recall_memory":
+            selected = ["memory_recall"]
+        else:
+            selected = []
+        return [name for name in selected if name in proposed and self.registry.get(name) is not None]
 
     def _maybe_self_improve(self) -> ImprovementReport | None:
         if not self.config.auto_improve_enabled:

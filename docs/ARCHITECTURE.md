@@ -41,6 +41,10 @@ does not replace the specialized circuits.
   receives proposals from perception, circuits, memory, experts, and tools,
   then chooses what deserves attention or action. It persists prediction,
   observation, uncertainty, surprise, and attention focus in `cognitive_traces`.
+- `ActionPlanner`: ranks `answer`, `recall_memory`, `use_tools`,
+  `ask_feedback`, and `investigate_gap` with a practical expected-free-energy
+  approximation. It does not execute hidden reasoning; it exposes the chosen
+  action and rejected candidates in interaction metadata and cognitive traces.
 - `ExpertManager`: manages self-created experts as living assets with
   probation, active, hot/cold, and retired states.
 - `LocalCircuitLearner`: maintains circuit keys, liquid state, usage counters,

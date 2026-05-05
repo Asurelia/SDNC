@@ -19,10 +19,14 @@ def test_interaction_system_runs_without_external_model(tmp_path):
         assert result.activation.active_count <= 2
         assert "calculator" in result.metadata["tool_names"]
         assert result.metadata["cognitive_core"]["prediction"]["predicted_action"] == "use_tools"
+        assert result.metadata["action_plan"]["selected_action"] == "use_tools"
+        assert result.metadata["action_plan"]["selected_tools"] == ["calculator"]
         assert result.metadata["cognitive_core"]["slot_count"] <= config.cognitive_workspace_slots
         assert result.learned
         assert (tmp_path / "state.npz").exists()
-        assert system.recent_cognitive_traces(limit=1)[0].id == result.metadata["cognitive_core"]["id"]
+        trace = system.recent_cognitive_traces(limit=1)[0]
+        assert trace.id == result.metadata["cognitive_core"]["id"]
+        assert trace.payload["action_plan"]["selected_action"] == "use_tools"
     finally:
         system.close()
 

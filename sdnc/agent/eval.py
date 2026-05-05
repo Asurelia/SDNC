@@ -49,6 +49,8 @@ class CaseRun:
     uncertainty: float
     memory_hits: int
     tools: list[str]
+    planner_action: str
+    planner_score: float
     active_count: int
     max_active_ratio: float
     hot_vram_gb: float
@@ -67,6 +69,8 @@ class CaseRun:
             "uncertainty": round(self.uncertainty, 4),
             "memory_hits": self.memory_hits,
             "tools": self.tools,
+            "planner_action": self.planner_action,
+            "planner_score": round(self.planner_score, 4),
             "active_count": self.active_count,
             "max_active_ratio": round(self.max_active_ratio, 4),
             "hot_vram_gb": round(self.hot_vram_gb, 4),
@@ -175,6 +179,7 @@ def _run_case(
     latency_ms = (time.perf_counter() - started) * 1000.0
     success, notes = _score_case(result, case)
     cognitive = result.metadata.get("cognitive_core", {})
+    action_plan = result.metadata.get("action_plan", {})
     resource = result.metadata.get("resource_budget", {})
     max_active_ratio = result.activation.active_count / max(system.config.n_circuits, 1)
     return CaseRun(
@@ -189,6 +194,8 @@ def _run_case(
         uncertainty=float(cognitive.get("uncertainty", 0.0)),
         memory_hits=sum(1 for memory in result.memories if memory.similarity >= 0.55),
         tools=[tool.tool_name for tool in result.tool_results],
+        planner_action=str(action_plan.get("selected_action", "")),
+        planner_score=float(action_plan.get("selected_score", 0.0)),
         active_count=result.activation.active_count,
         max_active_ratio=max_active_ratio,
         hot_vram_gb=float(resource.get("hot_vram_gb", 0.0)),
@@ -199,11 +206,18 @@ def _run_case(
 def _score_case(result: InteractionResult, case: EvaluationCase) -> tuple[bool, list[str]]:
     notes: list[str] = []
     tools = {tool.tool_name for tool in result.tool_results}
+    action_plan = result.metadata.get("action_plan", {})
+    planner_action = str(action_plan.get("selected_action", ""))
     content = "\n".join([result.response, *(tool.content for tool in result.tool_results)]).lower()
 
     for expected in case.expected_tools:
         if expected not in tools:
-            notes.append(f"missing tool {expected}")
+            memory_substitute = (
+                planner_action == "recall_memory"
+                and any(memory.similarity >= 0.55 for memory in result.memories)
+            )
+            if not memory_substitute:
+                notes.append(f"missing tool {expected}")
     for substring in case.expected_substrings:
         if substring.lower() not in content:
             notes.append(f"missing text {substring}")
@@ -227,6 +241,9 @@ def _summary(runs: list[CaseRun]) -> dict[str, Any]:
     initial_memory_hits = _mean(run.memory_hits for run in initial)
     repeat_memory_hits = _mean(run.memory_hits for run in repeat)
     max_sparse_ratio = max((run.max_active_ratio for run in runs), default=0.0)
+    planner_actions = {}
+    for run in runs:
+        planner_actions[run.planner_action] = planner_actions.get(run.planner_action, 0) + 1
     return {
         "total_runs": len(runs),
         "success_rate": round(all_success / max(len(runs), 1), 4),
@@ -242,6 +259,7 @@ def _summary(runs: list[CaseRun]) -> dict[str, Any]:
         "within_sparse_limit": max_sparse_ratio <= 0.05,
         "avg_latency_ms": round(_mean(run.latency_ms for run in runs), 3),
         "avg_hot_vram_gb": round(_mean(run.hot_vram_gb for run in runs), 4),
+        "planner_actions": planner_actions,
     }
 
 

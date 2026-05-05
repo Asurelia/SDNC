@@ -30,6 +30,8 @@ evaluation, UI, packaging, and stretch research, see
 - Sparse Cognitive Core / Global Workspace keeps a bounded belief packet,
   attention focus, prediction trace, uncertainty, and surprise for every learned
   interaction or observation.
+- Active-inference-style planner ranks answer/memory/tool/feedback/gap actions
+  and persists the selected policy in interaction metadata and cognitive traces.
 - Context LOD replaces dense long-context handling with summaries/prototypes.
 - Self-managed expert lifecycle: verified learning can create procedure
   experts, select a hot subset, cool unused experts, and retire weak ones.

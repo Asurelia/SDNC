@@ -162,6 +162,14 @@ Goal: make SDNC explore when useful instead of passively guessing.
 
 Tasks:
 
+- First implementation slice delivered:
+  - `sdnc/agent/planner.py` ranks `answer`, `recall_memory`, `use_tools`,
+    `ask_feedback`, and `investigate_gap`;
+  - each candidate exposes uncertainty reduction, task utility, user relevance,
+    cost, risk, expected surprise, score, and expected free energy;
+  - `InteractionLearningSystem` persists the selected plan into metadata,
+    `sync_events`, and `cognitive_traces`;
+  - evaluation reports now count planner actions.
 - Add an `ActionPlanner` that ranks answer/search/tool/ask-feedback/experiment.
 - Score actions with a practical expected-free-energy approximation:
 

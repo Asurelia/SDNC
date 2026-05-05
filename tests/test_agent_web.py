@@ -33,6 +33,7 @@ def test_web_api_status_and_interact(tmp_path):
         assert any(tool["tool_name"] == "calculator" for tool in result["result"]["tool_results"])
         assert result["result"]["metadata"]["cognitive_budget"]["mode"] == "think"
         assert result["result"]["metadata"]["cognitive_core"]["prediction"]["predicted_action"] == "use_tools"
+        assert result["result"]["metadata"]["action_plan"]["selected_action"] == "use_tools"
         assert "resource_budget" in result["status"]
         assert result["status"]["cognitive_core"]["workspace_slots"] == config.cognitive_workspace_slots
         assert result["status"]["modalities"] == ["audio", "image", "text", "video"]
