@@ -31,6 +31,7 @@ and feedback-driven plasticity.
 - `sdnc/agent/multimodal.py` - local signatures for text/image/audio/video observations.
 - `sdnc/agent/perception.py` - sensory signal binding into sparse multimodal events.
 - `sdnc/agent/planner.py` - active-inference-style action planner for answer/tool/feedback/gap choices.
+- `sdnc/agent/replay.py` - bounded sleep/replay consolidation for salient episodes and repeated tool successes.
 - `sdnc/agent/dataset_ingestion.py` - local/Hugging Face dataset rows as experiences.
 - `sdnc/agent/experience_packs.py` - compressed prototypes for experience packs.
 - `sdnc/agent/eval.py` - deterministic learning/sparsity/tool/memory evaluation harness.

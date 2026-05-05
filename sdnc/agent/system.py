@@ -30,6 +30,7 @@ from sdnc.agent.multimodal import (
 from sdnc.agent.perception import PerceptionBus, SensoryEvent
 from sdnc.agent.planner import ActionPlan, ActionPlanner
 from sdnc.agent.plasticity import LocalCircuitLearner
+from sdnc.agent.replay import SleepConsolidationCycle, SleepReport
 from sdnc.agent.self_improvement import ImprovementReport, SelfImprovementCycle
 from sdnc.agent.sync import ConvexEventMirror, NullEventMirror, SafeEventMirror
 from sdnc.agent.tools import (
@@ -95,6 +96,7 @@ class InteractionLearningSystem:
         self.learner.load(self.config.state_path)
         self.registry = registry or self._default_registry()
         self.improver = SelfImprovementCycle(self.config, self.memory, self.learner)
+        self.sleeper = SleepConsolidationCycle(self.config, self.memory, self.learner)
         self.gap_learner = SelfDirectedLearner(
             self.config,
             self.memory,
@@ -720,6 +722,24 @@ class InteractionLearningSystem:
                     }
                     for action in report.actions
                 ],
+                "n_circuits": self.config.n_circuits,
+            },
+        )
+        return report
+
+    def run_sleep_cycle(
+        self,
+        preview: bool = False,
+        batch_size: int | None = None,
+    ) -> SleepReport:
+        """Run or preview a bounded replay/sleep consolidation cycle."""
+        report = self.sleeper.run(preview=preview, batch_size=batch_size)
+        if not preview:
+            self.learner.save(self.config.state_path)
+        self._emit_event(
+            "sleep",
+            {
+                **report.to_payload(),
                 "n_circuits": self.config.n_circuits,
             },
         )

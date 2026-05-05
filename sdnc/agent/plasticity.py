@@ -155,6 +155,25 @@ class LocalCircuitLearner:
         self.connection_weights[mask] = 0.0
         return count
 
+    def snapshot(self) -> PlasticitySnapshot:
+        """Capture learner state before a bounded experiment."""
+
+        return PlasticitySnapshot(
+            circuit_keys=self.circuit_keys.copy(),
+            circuit_state=self.circuit_state.copy(),
+            usage_counts=self.usage_counts.copy(),
+            connection_weights=self.connection_weights.copy(),
+        )
+
+    def restore(self, snapshot: PlasticitySnapshot) -> None:
+        """Restore a previously captured learner state."""
+
+        self.circuit_keys = snapshot.circuit_keys.copy()
+        self.circuit_state = snapshot.circuit_state.copy()
+        self.usage_counts = snapshot.usage_counts.copy()
+        self.connection_weights = snapshot.connection_weights.copy()
+        self.config.n_circuits = int(self.circuit_keys.shape[0])
+
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         np.savez_compressed(

@@ -232,6 +232,23 @@ class PersistentMemory:
             ).fetchall()
         return [self._row_to_memory(row, self._unpack_vector(row["embedding"]), 0.0) for row in rows]
 
+    def salient_episodes(
+        self,
+        limit: int = 20,
+        min_salience: float = 0.0,
+    ) -> list[MemoryRecord]:
+        with self._lock:
+            rows = self.conn.execute(
+                """
+                SELECT * FROM episodes
+                WHERE salience >= ?
+                ORDER BY salience DESC, timestamp DESC
+                LIMIT ?
+                """,
+                (float(min_salience), int(limit)),
+            ).fetchall()
+        return [self._row_to_memory(row, self._unpack_vector(row["embedding"]), 0.0) for row in rows]
+
     def upsert_procedure(
         self,
         name: str,

@@ -77,11 +77,16 @@ def test_web_api_status_and_interact(tmp_path):
         learning = _post_json(f"{base}/api/learn-gap", {})
         assert learning["report"]["summary"].startswith("Learning cycle:")
 
+        sleep = _post_json(f"{base}/api/sleep", {"preview": True, "batch_size": 3})
+        assert sleep["report"]["preview"] is True
+        assert "summary" in sleep["report"]
+
         events = _get_json(f"{base}/api/events")
         assert any(event["event_type"] == "interaction" for event in events["events"])
         assert any(event["event_type"] == "observation" for event in events["events"])
         assert any(event["event_type"] == "file" for event in events["events"])
         assert any(event["event_type"] == "learning" for event in events["events"])
+        assert any(event["event_type"] == "sleep" for event in events["events"])
 
         recent = _get_json(f"{base}/api/recent")
         assert any(binding["modalities"] == ["text", "image"] for binding in recent["sensory_bindings"])

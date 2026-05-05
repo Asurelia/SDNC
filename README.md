@@ -44,6 +44,7 @@ L'agent actuel sait:
   compresses, checksums et decode `L0/L1/L2`;
 - lancer une evaluation locale qui mesure routing outil, memoire, surprise,
   latence, budget chaud et respect du ratio sparse;
+- lancer un cycle de sommeil/replay borne pour consolider les episodes utiles;
 - journaliser les evenements pour le monitoring local.
 
 ## Installation
@@ -86,6 +87,9 @@ Lancer l'agent interactif en console:
 python -m sdnc.agent.cli --workspace .
 ```
 
+Dans la console, `/sleep-preview` inspecte les episodes qui seraient rejoues et
+`/sleep` lance une consolidation bornee.
+
 Lancer l'interface web locale:
 
 ```powershell
@@ -126,6 +130,7 @@ Observation
   -> ExpertAtlas payload decode
   -> ToolRegistry
   -> PersistentMemory
+  -> SleepConsolidationCycle
   -> feedback / self-improvement
 ```
 

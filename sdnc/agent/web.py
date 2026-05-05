@@ -210,6 +210,12 @@ def build_handler(app: SDNCWebApp):
             elif parsed.path == "/api/improve":
                 report = app.system.run_self_improvement()
                 self._send_json({"report": _report_payload(report), "status": self._status_payload()})
+            elif parsed.path == "/api/sleep":
+                report = app.system.run_sleep_cycle(
+                    preview=bool(payload.get("preview", False)),
+                    batch_size=int(payload["batch_size"]) if payload.get("batch_size") else None,
+                )
+                self._send_json({"report": report.to_payload(), "status": self._status_payload()})
             elif parsed.path == "/api/learn-gap":
                 report = app.system.learn_from_last_gap()
                 self._send_json({"report": _learning_report_payload(report), "status": self._status_payload()})

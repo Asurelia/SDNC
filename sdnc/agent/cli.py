@@ -40,7 +40,10 @@ def main() -> int:
             print(result.response)
             return 0
 
-        print("SDNC interaction learner. Commands: /feedback <score> [text], /recent, /improve, /learn, /quit")
+        print(
+            "SDNC interaction learner. Commands: /feedback <score> [text], "
+            "/recent, /improve, /sleep, /sleep-preview, /learn, /quit"
+        )
         while True:
             text = input("sdnc> ").strip()
             if not text:
@@ -63,6 +66,12 @@ def main() -> int:
                 continue
             if text.startswith("/improve"):
                 print(system.run_self_improvement().summary())
+                continue
+            if text.startswith("/sleep-preview"):
+                print(system.run_sleep_cycle(preview=True).summary())
+                continue
+            if text.startswith("/sleep"):
+                print(system.run_sleep_cycle().summary())
                 continue
             if text.startswith("/learn"):
                 print(system.learn_from_last_gap().summary())

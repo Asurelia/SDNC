@@ -51,6 +51,9 @@ evaluation, UI, packaging, and stretch research, see
 - Minimal Phase 7 evaluation harness in `sdnc/agent/eval.py`, with CLI/JSON
   reports for tool routing, memory reuse, surprise, latency, hot VRAM estimate,
   and sparse activation limits.
+- First Phase 4 sleep/replay cycle in `sdnc/agent/replay.py`: salience-ranked
+  queue, preview mode, bounded local plasticity, drift guard, negative-feedback
+  holdout, repeated procedure strengthening, CLI `/sleep`, and API `/api/sleep`.
 - Archived the original Phase 1 spec in `docs/SDNC_PHASE1_SPEC.md`.
 
 ## Near-Term Hardening
@@ -89,8 +92,9 @@ evaluation, UI, packaging, and stretch research, see
    - optional local file ingestion from browser/API paths;
    - no backprop through CLIP.
 7. Add salience replay:
-   - periodically replay high-salience episodes into local circuit updates;
-   - keep replay bounded to avoid drift.
+   - add scheduled/idle triggering around the manual sleep endpoint;
+   - expose richer sleep controls in the web UI;
+   - add replay benchmarks that prove performance improves without forgetting.
 8. Add tool safety profiles:
    - read-only default;
    - optional explicit write/execute tools later.

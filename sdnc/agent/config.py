@@ -61,6 +61,14 @@ class AutonomousConfig:
     procedure_min_success_rate: float = 0.65
     procedure_prune_failures: int = 3
 
+    # Replay/sleep consolidation. Replay spends a small bounded plasticity
+    # budget on already useful experiences; it must not become hidden training.
+    replay_recent_limit: int = 200
+    replay_batch_size: int = 12
+    replay_min_salience: float = 0.45
+    replay_strength: float = 0.35
+    replay_max_drift: float = 0.08
+
     # Self-directed learning. External advisors are disabled unless explicitly
     # configured; sources provide hypotheses, never direct truth.
     lack_novelty_threshold: float = 0.55

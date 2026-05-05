@@ -274,6 +274,26 @@ Tasks:
 - Add drift detection for circuit keys and expert utility.
 - Add sleep-cycle UI controls: preview, run, stop, inspect outcome.
 
+Implemented first slice, 2026-05-05:
+
+- `sdnc/agent/replay.py` adds `SleepConsolidationCycle` with a salience-ranked
+  replay queue and explicit `SleepReport`.
+- Replay can run in preview mode or actual low-strength local plasticity.
+- Negative-feedback episodes are held out; accepted/rejected replay attempts are
+  recorded as experiments.
+- A drift guard restores learner state if active circuit keys move too much.
+- Repeated replayed tool successes strengthen procedures after checking recent
+  failures.
+- `InteractionLearningSystem.run_sleep_cycle`, CLI `/sleep` and
+  `/sleep-preview`, and API `POST /api/sleep` expose the cycle.
+
+Still open:
+
+- Scheduled idle sleep cycles and cancellation.
+- Rich web controls for preview/run/stop/outcome inspection.
+- Replay-vs-forgetting benchmark suite.
+- Expert utility drift checks beyond procedure strengthening.
+
 Acceptance criteria:
 
 - Replay improves benchmark performance on repeated tasks.

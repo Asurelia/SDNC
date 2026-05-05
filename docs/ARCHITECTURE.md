@@ -51,6 +51,10 @@ does not replace the specialized circuits.
   checksum.
 - `ExpertManager`: manages self-created experts as living assets with
   probation, active, hot/cold, and retired states.
+- `SleepConsolidationCycle`: builds a salience-ranked replay queue, previews or
+  replays useful episodes with low-strength local plasticity, rejects negative
+  feedback, detects excessive circuit drift, and strengthens repeated
+  tool-success procedures.
 - `LocalCircuitLearner`: maintains circuit keys, liquid state, usage counters,
   and sparse inter-circuit weights. It activates at most 5 percent of circuits.
 - `PersistentMemory`: SQLite episodic and procedural memory. Episodes store
@@ -155,6 +159,23 @@ Growth is bounded by `max_circuits`. If capacity is full, the system recycles a
 quiet low-use circuit rather than growing without limit. Procedures/skills are
 promoted from repeated successful tool patterns and pruned when repeated
 failures show they are no longer useful.
+
+## Sleep Replay
+
+Replay is a bounded maintenance path, not hidden pretraining:
+
+```text
+salient episodes
+  -> replay queue
+  -> preview or low-strength local plasticity
+  -> drift guard
+  -> repeated tool-success procedure strengthening
+  -> sync_events report
+```
+
+Negative-feedback episodes are held out. Useful existing procedures are listed
+as protected before replay starts, and any replay that moves active circuit keys
+past the configured drift limit is restored and recorded as rejected.
 
 ## Self-Directed Learning
 
