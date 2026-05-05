@@ -30,6 +30,7 @@ datasets = [
 
 [project.scripts]
 sdnc-agent = "sdnc.agent.cli:main"
+sdnc-eval = "sdnc.agent.eval:main"
 sdnc-web = "sdnc.agent.web:main"
 
 [tool.pytest.ini_options]

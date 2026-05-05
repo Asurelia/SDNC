@@ -43,15 +43,19 @@ evaluation, UI, packaging, and stretch research, see
 - Tests for encoding, plasticity, memory, and the end-to-end interaction loop.
 - Tests for cognitive workspace bounds, cognitive trace persistence, web API
   exposure, and interaction metadata.
+- Minimal Phase 7 evaluation harness in `sdnc/agent/eval.py`, with CLI/JSON
+  reports for tool routing, memory reuse, surprise, latency, hot VRAM estimate,
+  and sparse activation limits.
 - Archived the original Phase 1 spec in `docs/SDNC_PHASE1_SPEC.md`.
 
 ## Near-Term Hardening
 
-1. Add a benchmark script for repeated learning tasks:
+1. Expand the benchmark harness:
    - same query after feedback should select the same useful tool faster;
    - incorrect feedback should reduce the same association;
-   - memory retrieval should improve across sessions.
-   - `/learn` should create fewer gaps after successful consolidation.
+   - memory retrieval should improve across sessions;
+   - `/learn` should create fewer gaps after successful consolidation;
+   - add multimodal recall, expert promotion/rejection, and replay tests.
 2. Add real expert payloads behind the lifecycle:
    - quantized expert pack format;
    - LRU residency manager;

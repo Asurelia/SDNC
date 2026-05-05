@@ -87,13 +87,24 @@ class FileSearchTool:
         if not terms:
             return ToolResult(self.name, False, "no searchable terms")
 
-        matches: list[str] = []
+        direct = self._direct_path_matches(query)
+        if direct:
+            return ToolResult(
+                self.name,
+                True,
+                "\n".join(direct[: self.limit]),
+                {"count": len(direct), "direct": True},
+            )
+
+        normalized_query = query.replace("\\", "/").lower()
+        scored_matches: list[tuple[int, str]] = []
         for path in self.root.rglob("*"):
-            if len(matches) >= self.limit:
-                break
             if not path.is_file() or path.suffix.lower() not in self.extensions:
                 continue
-            if any(part in {".git", "venv", "__pycache__", ".pytest_cache"} for part in path.parts):
+            if any(
+                part in {".git", "venv", "__pycache__", ".pytest_cache", "data", "checkpoints"}
+                for part in path.parts
+            ):
                 continue
             try:
                 if path.stat().st_size > 500_000:
@@ -102,14 +113,35 @@ class FileSearchTool:
             except OSError:
                 continue
             lowered = text.lower()
-            score = sum(1 for term in terms if term in lowered)
+            rel = path.relative_to(self.root)
+            lowered_path = str(rel).replace("\\", "/").lower()
+            score = sum(1 for term in terms if term in lowered or term in lowered_path)
+            if lowered_path in normalized_query:
+                score += 10
+            elif path.name.lower() in normalized_query:
+                score += 6
             if score:
-                rel = path.relative_to(self.root)
-                matches.append(f"{rel} score={score}")
+                scored_matches.append((score, str(rel)))
 
-        if not matches:
+        if not scored_matches:
             return ToolResult(self.name, True, "no file matches", {"count": 0})
+        ranked = sorted(scored_matches, key=lambda item: (-item[0], item[1].lower()))
+        matches = [f"{rel} score={score}" for score, rel in ranked[: self.limit]]
         return ToolResult(self.name, True, "\n".join(matches), {"count": len(matches)})
+
+    def _direct_path_matches(self, query: str) -> list[str]:
+        matches: list[str] = []
+        for raw in re.findall(r"[A-Za-z0-9_./\\-]+\.[A-Za-z0-9_]+", query):
+            candidate = Path(raw)
+            path = candidate if candidate.is_absolute() else self.root / candidate
+            path = path.resolve()
+            try:
+                rel = path.relative_to(self.root)
+            except ValueError:
+                continue
+            if path.is_file() and path.suffix.lower() in self.extensions:
+                matches.append(f"{rel} score=direct")
+        return matches
 
 
 class FileReadTool:

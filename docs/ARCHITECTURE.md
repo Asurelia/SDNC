@@ -63,6 +63,9 @@ does not replace the specialized circuits.
 - `DatasetIngestor`: streams local or Hugging Face rows as experiences.
 - `ExperiencePack`: compressed prototypes built from many observations for
   later sparse recall.
+- `EvaluationHarness`: deterministic probes for tool routing, repeated memory,
+  surprise, uncertainty, latency, hot VRAM estimates, and sparse activation
+  limits.
 - `sync_events`: append-only local event log used by the web UI for realtime
   updates. Convex can mirror these events, but SQLite remains the authority.
 - `sdnc.agent.web`: local browser interface and JSON API around the same
@@ -257,6 +260,7 @@ procedures:
 ```bash
 python -m sdnc.agent.cli --no-web --once "calcule 2 + 2"
 python -m sdnc.agent.cli --workspace .
+python -m sdnc.agent.eval --workspace . --reset
 python -m sdnc.agent.web --host 127.0.0.1 --port 8787 --workspace .
 python -m sdnc.agent.web --host 127.0.0.1 --port 8787 --workspace . --sync-to-convex --convex-url <url>
 ```

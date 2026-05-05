@@ -330,6 +330,13 @@ Goal: measure whether SDNC is actually learning.
 
 Tasks:
 
+- First implementation slice delivered:
+  - `sdnc/agent/eval.py` runs deterministic arithmetic/tool routing,
+    file-search routing, and repeated-memory probes;
+  - reports include task success, confidence, novelty, memory hits, surprise,
+    uncertainty, latency, hot VRAM estimate, tools used, and active ratio;
+  - `sdnc-eval` / `python -m sdnc.agent.eval` can emit JSON reports;
+  - regression tests gate the 5 percent sparse activation limit.
 - Add benchmark datasets for:
   - repeated user preference learning;
   - file QA with memory;

@@ -15,6 +15,7 @@ and feedback-driven plasticity.
 - Run autonomous loop once: `python -m sdnc.agent.cli --no-web --once "calcule 2 + 2"`
 - Run interactive learner: `python -m sdnc.agent.cli --workspace .`
 - Run local web UI: `python -m sdnc.agent.web --host 127.0.0.1 --port 8787 --workspace .`
+- Run SDNC eval harness: `python -m sdnc.agent.eval --workspace . --reset`
 - Optional dataset deps: `pip install -e ".[datasets]"`
 
 ## Important Files
@@ -30,6 +31,7 @@ and feedback-driven plasticity.
 - `sdnc/agent/perception.py` - sensory signal binding into sparse multimodal events.
 - `sdnc/agent/dataset_ingestion.py` - local/Hugging Face dataset rows as experiences.
 - `sdnc/agent/experience_packs.py` - compressed prototypes for experience packs.
+- `sdnc/agent/eval.py` - deterministic learning/sparsity/tool/memory evaluation harness.
 - `sdnc/agent/sync.py` - optional event mirrors; local SQLite stays authoritative.
 - `sdnc/agent/self_improvement.py` - consensus, sandbox experiments, growth, pruning.
 - `sdnc/agent/tools.py` - real tool registry: memory, web, file search/read, calculator.

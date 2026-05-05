@@ -38,6 +38,8 @@ L'agent actuel sait:
   sensoriels compacts;
 - gerer une file locale de fichiers d'entrainement depuis l'interface web;
 - creer, tester, promouvoir, refroidir ou rejeter des experts;
+- lancer une evaluation locale qui mesure routing outil, memoire, surprise,
+  latence, budget chaud et respect du ratio sparse;
 - journaliser les evenements pour le monitoring local.
 
 ## Installation
@@ -66,6 +68,12 @@ Lancer une interaction autonome unique:
 
 ```powershell
 python -m sdnc.agent.cli --no-web --once "calcule 2 + 2"
+```
+
+Lancer l'evaluation locale SDNC:
+
+```powershell
+python -m sdnc.agent.eval --workspace . --reset
 ```
 
 Lancer l'agent interactif en console:
