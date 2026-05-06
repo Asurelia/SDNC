@@ -120,6 +120,46 @@ class RuleEngine:
         matches.sort(key=lambda item: item.score, reverse=True)
         return matches
 
+    def attach_matches(
+        self,
+        matches: list[RuleMatch],
+        target_kind: str,
+        target_id: str,
+        relation: str,
+        provenance: list[str] | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> int:
+        """Attach matched rules to one SDNC asset without making them truth."""
+        if not target_id:
+            return 0
+        if target_kind not in {"expert", "sensory_prototype"}:
+            raise ValueError(f"unsupported rule link target: {target_kind}")
+        attached = 0
+        for match in matches:
+            if (
+                match.rule.confidence < self.config.rule_min_confidence
+                or match.rule.similarity < self.config.rule_match_similarity
+            ):
+                continue
+            link_payload = {
+                **dict(payload or {}),
+                "rule_name": match.rule.name,
+                "action_tool": match.rule.action_tool,
+                "rule_similarity": match.rule.similarity,
+                "rule_score": match.score,
+            }
+            self.memory.upsert_rule_link(
+                rule_id=match.rule.id,
+                target_kind=target_kind,
+                target_id=target_id,
+                relation=relation,
+                confidence=match.score,
+                provenance=provenance,
+                payload=link_payload,
+            )
+            attached += 1
+        return attached
+
     def consolidate_recent(self, limit: int | None = None) -> RuleConsolidationReport:
         report = RuleConsolidationReport(timestamp=time())
         records = self.memory.recent(limit or self.config.rule_recent_limit)

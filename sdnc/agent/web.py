@@ -285,6 +285,7 @@ def build_handler(app: SDNCWebApp):
                 ),
                 "expert_summary": app.system.expert_manager.summary(),
                 "rule_summary": app.system.rule_summary(),
+                "rule_link_summary": app.system.rule_link_summary(),
                 "sensory_prototype_summary": app.system.sensory_prototype_summary(),
                 "file_queue": app.system.training_file_summary(),
                 "cognitive_core": {

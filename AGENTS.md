@@ -26,7 +26,7 @@ and feedback-driven plasticity.
 - `sdnc/agent/expert_atlas.py` - compressed expert payloads, L0/L1/L2 decode, checksums, hot cost hints.
 - `sdnc/agent/experts.py` - lifecycle for self-created experts and hot/cold residency.
 - `sdnc/agent/plasticity.py` - Oja-style local circuit updates and sparse activation.
-- `sdnc/agent/memory.py` - SQLite episodic/procedural memory.
+- `sdnc/agent/memory.py` - SQLite episodic/procedural memory, sensory prototypes, rules, and rule links.
 - `sdnc/agent/learning.py` - lacune detection, source hypotheses, consensus, local verification.
 - `sdnc/agent/multimodal.py` - local signatures for text/image/audio/video observations.
 - `sdnc/agent/perception.py` - sensory signal binding into sparse multimodal events.
@@ -72,7 +72,7 @@ and feedback-driven plasticity.
 - **ALWAYS** update `docs/EFFICIENCY_STRATEGY.md` when changing budget, context compression, or expert residency behavior.
 - **ALWAYS** create or reinforce experts only from verified learning evidence, not from one untested source claim.
 - **ALWAYS** record rejected self-improvement experiments; rejection is learning, not failure.
-- **ALWAYS** keep neuro-symbolic rules provenance-backed and weaken/fork them on counterexamples instead of overwriting evidence.
+- **ALWAYS** keep neuro-symbolic rules and rule links provenance-backed; weaken/fork rules on counterexamples instead of overwriting evidence.
 - **ALWAYS** add or update tests when changing routing, plasticity, memory persistence, or tool selection.
 - Frozen encoders are allowed for perception; learning belongs in circuits/memory/procedures.
 

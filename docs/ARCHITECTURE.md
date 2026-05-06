@@ -203,6 +203,14 @@ counterexample ids. During interaction, matched enabled rules are reported in
 This helps SDNC explain which learned rule influenced an action without making
 that rule a single source of truth.
 
+The `rule_links` SQLite table stores explicit relations from matched rules to
+living SDNC assets. Today the supported targets are hot experts and sensory
+prototypes. Each link keeps relation type, confidence, provenance ids, and a
+small payload such as expert name or prototype key. Runtime metadata reports
+attachment counts in `metadata.rule_attachments`, and web status exposes
+`rule_link_summary` so the user can inspect which learned hints shaped the
+current organization layer.
+
 ## Self-Directed Learning
 
 When SDNC has a lacune, it should learn instead of bluffing. Current triggers:
@@ -257,6 +265,9 @@ text/image/audio/video sample(s)
 The second time SDNC observes a similar multimodal event, the prototype match is
 reported in `metadata.sensory_prototypes.matches`; after learning, the updated
 prototype is reported in `metadata.sensory_prototypes.learned`.
+When an enabled neuro-symbolic rule matches the same sensory event, SDNC stores
+a `rule_links` relation to the learned prototype instead of burying that relation
+inside a prompt or raw media context.
 
 Datasets are not copied into dense weights. They are streamed as experiences:
 

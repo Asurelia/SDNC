@@ -167,6 +167,22 @@ class RuleRecord:
 
 
 @dataclass
+class RuleLinkRecord:
+    """A learned relation between one rule and a living SDNC asset."""
+
+    id: str
+    timestamp: float
+    updated_at: float
+    rule_id: str
+    target_kind: str
+    target_id: str
+    relation: str
+    confidence: float
+    provenance: list[str]
+    payload: dict[str, Any]
+
+
+@dataclass
 class ExpertRecord:
     """A self-managed SDNC expert asset."""
 
@@ -542,6 +558,103 @@ class PersistentMemory:
                     (status,),
                 ).fetchall()
         return [self._row_to_rule(row, self._unpack_vector(row["trigger_embedding"]), 0.0) for row in rows]
+
+    def upsert_rule_link(
+        self,
+        rule_id: str,
+        target_kind: str,
+        target_id: str,
+        relation: str,
+        confidence: float,
+        provenance: list[str] | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> str:
+        """Persist a provenance-backed attachment between a rule and an asset."""
+        now = time()
+        provenance = provenance or []
+        payload = payload or {}
+        confidence = float(max(0.0, min(1.0, confidence)))
+        with self._lock:
+            existing = self.conn.execute(
+                """
+                SELECT * FROM rule_links
+                WHERE rule_id = ? AND target_kind = ? AND target_id = ? AND relation = ?
+                """,
+                (rule_id, target_kind, target_id, relation),
+            ).fetchone()
+            if existing:
+                link_id = existing["id"]
+                old_provenance = json.loads(existing["provenance_json"] or "[]")
+                old_payload = json.loads(existing["payload_json"] or "{}")
+                self.conn.execute(
+                    """
+                    UPDATE rule_links
+                    SET updated_at = ?, confidence = ?, provenance_json = ?, payload_json = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        now,
+                        max(float(existing["confidence"]), confidence),
+                        json.dumps(
+                            _dedupe_strings([*old_provenance, *provenance]),
+                            sort_keys=True,
+                            default=str,
+                        ),
+                        json.dumps({**old_payload, **payload}, sort_keys=True, default=str),
+                        link_id,
+                    ),
+                )
+            else:
+                link_id = str(uuid.uuid4())
+                self.conn.execute(
+                    """
+                    INSERT INTO rule_links
+                        (id, timestamp, updated_at, rule_id, target_kind, target_id,
+                         relation, confidence, provenance_json, payload_json)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        link_id,
+                        now,
+                        now,
+                        rule_id,
+                        target_kind,
+                        target_id,
+                        relation,
+                        confidence,
+                        json.dumps(_dedupe_strings(provenance), sort_keys=True, default=str),
+                        json.dumps(payload, sort_keys=True, default=str),
+                    ),
+                )
+            self.conn.commit()
+        return link_id
+
+    def list_rule_links(
+        self,
+        rule_id: str | None = None,
+        target_kind: str | None = None,
+        target_id: str | None = None,
+        limit: int = 100,
+    ) -> list[RuleLinkRecord]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if rule_id:
+            clauses.append("rule_id = ?")
+            params.append(rule_id)
+        if target_kind:
+            clauses.append("target_kind = ?")
+            params.append(target_kind)
+        if target_id:
+            clauses.append("target_id = ?")
+            params.append(target_id)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        params.append(int(limit))
+        with self._lock:
+            rows = self.conn.execute(
+                f"SELECT * FROM rule_links {where} ORDER BY updated_at DESC LIMIT ?",
+                tuple(params),
+            ).fetchall()
+        return [self._row_to_rule_link(row) for row in rows]
 
     def record_tool_result(self, tool_name: str, success: bool) -> None:
         with self._lock:
@@ -1412,6 +1525,20 @@ class PersistentMemory:
                 payload_json TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS rule_links (
+                id TEXT PRIMARY KEY,
+                timestamp REAL NOT NULL,
+                updated_at REAL NOT NULL,
+                rule_id TEXT NOT NULL,
+                target_kind TEXT NOT NULL,
+                target_id TEXT NOT NULL,
+                relation TEXT NOT NULL,
+                confidence REAL NOT NULL,
+                provenance_json TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                UNIQUE(rule_id, target_kind, target_id, relation)
+            );
+
             CREATE TABLE IF NOT EXISTS sync_events (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 timestamp REAL NOT NULL,
@@ -1460,6 +1587,12 @@ class PersistentMemory:
                 ON rules(status);
             CREATE INDEX IF NOT EXISTS idx_rules_confidence
                 ON rules(confidence DESC);
+            CREATE INDEX IF NOT EXISTS idx_rule_links_rule
+                ON rule_links(rule_id);
+            CREATE INDEX IF NOT EXISTS idx_rule_links_target
+                ON rule_links(target_kind, target_id);
+            CREATE INDEX IF NOT EXISTS idx_rule_links_updated_at
+                ON rule_links(updated_at DESC);
             """
             )
             self.conn.commit()
@@ -1587,6 +1720,20 @@ class PersistentMemory:
             counterexamples=json.loads(row["counterexamples_json"] or "[]"),
             payload=json.loads(row["payload_json"] or "{}"),
             similarity=similarity,
+        )
+
+    def _row_to_rule_link(self, row: sqlite3.Row) -> RuleLinkRecord:
+        return RuleLinkRecord(
+            id=row["id"],
+            timestamp=float(row["timestamp"]),
+            updated_at=float(row["updated_at"]),
+            rule_id=row["rule_id"],
+            target_kind=row["target_kind"],
+            target_id=row["target_id"],
+            relation=row["relation"],
+            confidence=float(row["confidence"]),
+            provenance=json.loads(row["provenance_json"] or "[]"),
+            payload=json.loads(row["payload_json"] or "{}"),
         )
 
     def _row_to_expert(self, row: sqlite3.Row, embedding: np.ndarray, similarity: float) -> ExpertRecord:

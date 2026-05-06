@@ -391,9 +391,20 @@ Implemented first slice, 2026-05-06:
 - CLI `/rules`, API `POST /api/rules/consolidate`, and web status
   `rule_summary` expose the first controls.
 
+Implemented second slice, 2026-05-06:
+
+- SQLite now has `rule_links`, a provenance-backed relation table from matched
+  rules to living SDNC assets.
+- `RuleEngine.attach_matches` attaches only enabled, confident rule matches to
+  supported targets: `expert` and `sensory_prototype`.
+- Learned sensory prototypes receive rule links when the same observation
+  matches a rule; hot experts receive rule links during interaction/observation
+  cycles.
+- Interaction/observation metadata reports `rule_attachments`, and web status
+  exposes `rule_link_summary`.
+
 Still open:
 
-- Attach rules directly to expert payloads and sensory prototypes.
 - Add disable/enable/manual feedback controls in the web UI.
 - Add memory compaction that preserves rule provenance and rejection evidence.
 - Add richer contradiction forking when two useful but incompatible rules exist.

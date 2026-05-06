@@ -59,6 +59,9 @@ evaluation, UI, packaging, and stretch research, see
 - First Phase 6 neuro-symbolic memory in `sdnc/agent/rules.py`: rules with
   provenance/counterexamples/confidence, contradiction weakening, tool-routing
   hints, CLI `/rules`, and API `/api/rules/consolidate`.
+- Phase 6 rule links: `rule_links` now attaches matched rules to hot experts
+  and sensory prototypes with provenance, runtime attachment counts, and
+  `rule_link_summary` in web status.
 - First Phase 5 sensory prototypes in `sdnc/agent/sensory_prototypes.py`:
   repeated multimodal events get compact prototype identity, observation count,
   confidence, metadata exposure, and `/api/recent` visibility.
@@ -94,7 +97,7 @@ evaluation, UI, packaging, and stretch research, see
    - record failed hypotheses as limits;
    - rank future experiments by uncertainty and usefulness.
 6. Harden neuro-symbolic rules:
-   - attach rules to expert payloads and sensory prototypes;
+   - add richer inspection for rule-to-expert/prototype links;
    - add disable/enable/manual feedback controls;
    - add provenance-preserving memory compaction;
    - add contradiction forking when two rules both have useful evidence.

@@ -203,6 +203,7 @@ class InteractionLearningSystem:
         )
         outcome = feedback.text if feedback else None
         episode_id = ""
+        expert_rule_link_count = 0
 
         if learn:
             self.learner.learn(embedding, activation, salience, feedback_score or 0.0)
@@ -240,6 +241,12 @@ class InteractionLearningSystem:
                     successful_tools={result.tool_name for result in tool_results if result.success},
                     episode_id=episode_id,
                 )
+            expert_rule_link_count = self._attach_rules_to_experts(
+                rule_matches,
+                expert_report.selected_hot,
+                episode_id=episode_id,
+                workspace_id=workspace.id,
+            )
             self._interactions_since_improvement += 1
             improvement_report = self._maybe_self_improve()
             self.learner.save(self.config.state_path)
@@ -267,6 +274,7 @@ class InteractionLearningSystem:
                 "resource_budget": _resource_payload(resource_snapshot),
                 "expert_lifecycle": _expert_report_payload(expert_report),
                 "neuro_symbolic_rules": _rule_matches_payload(rule_matches),
+                "rule_attachments": {"expert_links": expert_rule_link_count},
                 "cognitive_core": _cognitive_workspace_payload(workspace),
                 "action_plan": action_plan.to_payload(),
             },
@@ -289,6 +297,7 @@ class InteractionLearningSystem:
                 "hot_vram_gb": resource_snapshot.hot_vram_gb,
                 "hot_experts": [expert.name for expert in expert_report.selected_hot],
                 "rules": [match.rule.name for match in rule_matches],
+                "expert_rule_links": expert_rule_link_count,
                 "cognitive_trace_id": workspace.id,
                 "uncertainty": workspace.uncertainty,
                 "surprise": workspace.surprise,
@@ -405,6 +414,8 @@ class InteractionLearningSystem:
             success=salience >= self.config.memory_salience_threshold,
         )
         episode_id = ""
+        expert_rule_link_count = 0
+        prototype_rule_link_count = 0
 
         if learn:
             self.learner.learn(event.embedding, activation, salience, 0.0)
@@ -424,6 +435,19 @@ class InteractionLearningSystem:
                     episode_id=episode_id,
                 )
             learned_prototype = self.sensory_prototypes.learn(event, episode_id, prototype_matches)
+            expert_rule_link_count = self._attach_rules_to_experts(
+                rule_matches,
+                expert_report.selected_hot,
+                episode_id=episode_id,
+                workspace_id=workspace.id,
+            )
+            prototype_rule_link_count = self._attach_rules_to_sensory_prototype(
+                rule_matches,
+                learned_prototype,
+                episode_id=episode_id,
+                event_id=event.id,
+                workspace_id=workspace.id,
+            )
             self.memory.store_sensory_binding(
                 event_id=event.id,
                 episode_id=episode_id,
@@ -469,6 +493,10 @@ class InteractionLearningSystem:
                 "resource_budget": _resource_payload(resource_snapshot),
                 "expert_lifecycle": _expert_report_payload(expert_report),
                 "neuro_symbolic_rules": _rule_matches_payload(rule_matches),
+                "rule_attachments": {
+                    "expert_links": expert_rule_link_count,
+                    "sensory_prototype_links": prototype_rule_link_count,
+                },
                 "cognitive_core": _cognitive_workspace_payload(workspace),
                 "action_plan": action_plan.to_payload(),
             },
@@ -498,6 +526,8 @@ class InteractionLearningSystem:
                 "hot_vram_gb": resource_snapshot.hot_vram_gb,
                 "hot_experts": [expert.name for expert in expert_report.selected_hot],
                 "rules": [match.rule.name for match in rule_matches],
+                "expert_rule_links": expert_rule_link_count,
+                "sensory_prototype_rule_links": prototype_rule_link_count,
                 "sensory_prototypes": [match.prototype.key for match in prototype_matches],
                 "learned_sensory_prototype": learned_prototype.key if learned_prototype else "",
                 "cognitive_trace_id": workspace.id,
@@ -815,6 +845,32 @@ class InteractionLearningSystem:
             ],
         }
 
+    def rule_link_summary(self) -> dict[str, Any]:
+        links = self.memory.list_rule_links(limit=200)
+        by_target_kind: dict[str, int] = {}
+        by_relation: dict[str, int] = {}
+        for link in links:
+            by_target_kind[link.target_kind] = by_target_kind.get(link.target_kind, 0) + 1
+            by_relation[link.relation] = by_relation.get(link.relation, 0) + 1
+        return {
+            "total": len(links),
+            "by_target_kind": by_target_kind,
+            "by_relation": by_relation,
+            "latest": [
+                {
+                    "rule_id": link.rule_id,
+                    "target_kind": link.target_kind,
+                    "target_id": link.target_id,
+                    "relation": link.relation,
+                    "confidence": link.confidence,
+                    "provenance_count": len(link.provenance),
+                    "rule_name": link.payload.get("rule_name", ""),
+                    "target_name": link.payload.get("target_name", link.payload.get("prototype_key", "")),
+                }
+                for link in links[:8]
+            ],
+        }
+
     def sensory_prototype_summary(self) -> dict[str, Any]:
         prototypes = self.memory.recent_sensory_prototypes(limit=200)
         by_modality: dict[str, int] = {}
@@ -875,6 +931,54 @@ class InteractionLearningSystem:
 
     def recent_events(self, limit: int = 50, after_id: int | None = None):
         return self.memory.recent_events(limit=limit, after_id=after_id)
+
+    def _attach_rules_to_experts(
+        self,
+        rule_matches: list[RuleMatch],
+        experts,
+        episode_id: str,
+        workspace_id: str,
+    ) -> int:
+        total = 0
+        provenance = [item for item in [episode_id, workspace_id] if item]
+        for expert in experts:
+            total += self.rule_engine.attach_matches(
+                rule_matches,
+                target_kind="expert",
+                target_id=expert.id,
+                relation="influences_hot_expert",
+                provenance=provenance,
+                payload={
+                    "target_name": expert.name,
+                    "expert_kind": expert.kind,
+                    "expert_status": expert.status,
+                },
+            )
+        return total
+
+    def _attach_rules_to_sensory_prototype(
+        self,
+        rule_matches: list[RuleMatch],
+        learned_prototype,
+        episode_id: str,
+        event_id: str,
+        workspace_id: str,
+    ) -> int:
+        if learned_prototype is None:
+            return 0
+        provenance = [item for item in [episode_id, event_id, workspace_id] if item]
+        return self.rule_engine.attach_matches(
+            rule_matches,
+            target_kind="sensory_prototype",
+            target_id=learned_prototype.id,
+            relation="matches_sensory_prototype",
+            provenance=provenance,
+            payload={
+                "prototype_key": learned_prototype.key,
+                "modalities": learned_prototype.modalities,
+                "observation_count": learned_prototype.observation_count,
+            },
+        )
 
     def _persist_cognitive_trace(
         self,
