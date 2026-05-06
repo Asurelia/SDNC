@@ -65,6 +65,9 @@ evaluation, UI, packaging, and stretch research, see
 - Phase 6 rule controls: API and web cockpit can list rules/links, consolidate,
   enable/disable/reject rules, and add manual positive or counterexample
   feedback while keeping provenance.
+- Phase 6 memory compaction: repeated non-protected episodes become compact
+  `memory_compactions` prototypes while raw source episodes, rule provenance,
+  counterexamples, and rule links stay preserved.
 - First Phase 5 sensory prototypes in `sdnc/agent/sensory_prototypes.py`:
   repeated multimodal events get compact prototype identity, observation count,
   confidence, metadata exposure, and `/api/recent` visibility.
@@ -101,7 +104,6 @@ evaluation, UI, packaging, and stretch research, see
    - rank future experiments by uncertainty and usefulness.
 6. Harden neuro-symbolic rules:
    - add richer inspection for rule-to-expert/prototype links;
-   - add provenance-preserving memory compaction;
    - add contradiction forking when two rules both have useful evidence.
 7. Upgrade sensory bridges:
    - frozen CLIP image embedding -> autonomous interaction vector;

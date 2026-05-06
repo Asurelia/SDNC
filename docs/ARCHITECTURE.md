@@ -55,6 +55,10 @@ does not replace the specialized circuits.
   replays useful episodes with low-strength local plasticity, rejects negative
   feedback, detects excessive circuit drift, and strengthens repeated
   tool-success procedures.
+- `MemoryCompactionCycle`: groups repeated non-protected episodes into compact
+  cold prototypes in `memory_compactions`. It preserves source episode ids,
+  protected rule evidence, counterexamples, and rule-link provenance; first-slice
+  compaction never deletes raw episodes.
 - `SensoryPrototypeLearner`: compacts repeated text/image/audio/video events
   into reusable sensory prototypes. Prototype matches are reported during
   observation and help SDNC recognize recurring multimodal situations without
@@ -293,6 +297,9 @@ and audio decoding:
 
 - Working memory: `LocalCircuitLearner.circuit_state`, decayed every activation.
 - Episodic memory: `episodes` table in SQLite.
+- Compact memory: `memory_compactions` table, storing repeated episode
+  prototypes with source ids, protected evidence ids, rule ids, and rule-link
+  ids.
 - Sensory memory: `sensory_bindings` table for cross-modal event bindings.
 - Procedural memory: `procedures` table, mapping trigger embeddings to useful
   tools and success rates.
@@ -355,6 +362,7 @@ Web endpoints:
 - `GET /` - SDNC Lab UI.
 - `GET /api/status` - circuits, sparsity, tools, modalities, memory paths.
 - `GET /api/recent` - recent memories and sensory bindings.
+- `POST /api/compact` - preview or run provenance-preserving memory compaction.
 - `GET /api/events` - recent local sync events.
 - `GET /api/stream` - local realtime SSE stream.
 - `POST /api/interact` - one interaction.

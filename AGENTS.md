@@ -23,6 +23,7 @@ and feedback-driven plasticity.
 - `sdnc/agent/cognitive_core.py` - sparse global workspace that organizes attention, belief state, prediction traces, experts, memory, tools, and feedback without storing all knowledge itself.
 - `sdnc/agent/budget.py` - cognitive modes and hot/cold RAM/VRAM estimates.
 - `sdnc/agent/context_lod.py` - long-context compression into summaries/prototypes.
+- `sdnc/agent/compaction.py` - provenance-preserving memory compaction into cold prototypes.
 - `sdnc/agent/expert_atlas.py` - compressed expert payloads, L0/L1/L2 decode, checksums, hot cost hints.
 - `sdnc/agent/experts.py` - lifecycle for self-created experts and hot/cold residency.
 - `sdnc/agent/plasticity.py` - Oja-style local circuit updates and sparse activation.
@@ -73,6 +74,7 @@ and feedback-driven plasticity.
 - **ALWAYS** create or reinforce experts only from verified learning evidence, not from one untested source claim.
 - **ALWAYS** record rejected self-improvement experiments; rejection is learning, not failure.
 - **ALWAYS** keep neuro-symbolic rules and rule links provenance-backed; weaken/fork rules on counterexamples instead of overwriting evidence.
+- **ALWAYS** preserve source episode ids, rule provenance, counterexamples, and rule links when compacting memory.
 - **ALWAYS** add or update tests when changing routing, plasticity, memory persistence, or tool selection.
 - Frozen encoders are allowed for perception; learning belongs in circuits/memory/procedures.
 

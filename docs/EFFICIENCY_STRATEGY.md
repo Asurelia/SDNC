@@ -129,6 +129,13 @@ centroid, modalities, sample/source ids, confidence, observation count, and
 compact features. This gives SDNC a reusable identity anchor for recurring
 multimodal situations without keeping raw media or long descriptions hot.
 
+Repeated episodic memories are compacted separately by `MemoryCompactionCycle`.
+It writes cold `memory_compactions` prototypes with centroid embeddings, source
+episode ids, protected evidence ids, related rule ids, and rule-link ids. This
+reduces repeated recall clutter without deleting raw episodes or losing
+counterexamples. The cycle is bounded by `memory_compaction_recent_limit`,
+`memory_compaction_batch_size`, and `memory_compaction_min_group_size`.
+
 ## Expert Capacity
 
 Current code stores experts as managed assets. Procedure experts are no longer
@@ -246,6 +253,7 @@ Implemented:
 - self-managed expert registry and hot/cold selection;
 - multimodal local signatures;
 - sensory event binding and persistence;
+- provenance-preserving memory compaction prototypes;
 - dataset ingestion and experience packs;
 - lacune-driven source-backed learning;
 - local SQLite event/memory store.

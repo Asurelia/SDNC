@@ -29,6 +29,7 @@ def test_web_api_status_and_interact(tmp_path):
         assert status["expert_summary"]["total"] == 0
         assert status["rule_summary"]["total"] == 0
         assert status["rule_link_summary"]["total"] == 0
+        assert status["memory_compaction_summary"]["total"] == 0
         assert status["sensory_prototype_summary"]["total"] == 0
 
         seed_embedding = app.system.encoder.encode("web rule inspection")
@@ -112,6 +113,10 @@ def test_web_api_status_and_interact(tmp_path):
         assert sleep["report"]["preview"] is True
         assert "summary" in sleep["report"]
 
+        compact = _post_json(f"{base}/api/compact", {"preview": True, "batch_size": 3})
+        assert compact["report"]["summary"].startswith("Memory compaction")
+        assert "memory_compaction_summary" in compact["status"]
+
         rules = _post_json(f"{base}/api/rules/consolidate", {})
         assert rules["report"]["summary"].startswith("Rule consolidation:")
 
@@ -121,12 +126,14 @@ def test_web_api_status_and_interact(tmp_path):
         assert any(event["event_type"] == "file" for event in events["events"])
         assert any(event["event_type"] == "learning" for event in events["events"])
         assert any(event["event_type"] == "sleep" for event in events["events"])
+        assert any(event["event_type"] == "compaction" for event in events["events"])
         assert any(event["event_type"] == "rules" for event in events["events"])
 
         recent = _get_json(f"{base}/api/recent")
         assert any(binding["modalities"] == ["text", "image"] for binding in recent["sensory_bindings"])
         assert recent["sensory_prototypes"]
         assert recent["cognitive_traces"]
+        assert "memory_compactions" in recent
         assert "attention" in recent["cognitive_traces"][0]
     finally:
         server.shutdown()

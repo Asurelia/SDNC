@@ -65,12 +65,17 @@ def build_handler(app: SDNCWebApp):
                     _cognitive_trace_payload(trace)
                     for trace in app.system.recent_cognitive_traces(limit=12)
                 ]
+                compactions = [
+                    _memory_compaction_payload(record)
+                    for record in app.system.recent_memory_compactions(limit=12)
+                ]
                 self._send_json(
                     {
                         "memories": memories,
                         "sensory_bindings": sensory,
                         "sensory_prototypes": sensory_prototypes,
                         "cognitive_traces": cognitive,
+                        "memory_compactions": compactions,
                     }
                 )
             elif parsed.path == "/api/events":
@@ -230,6 +235,12 @@ def build_handler(app: SDNCWebApp):
                     batch_size=int(payload["batch_size"]) if payload.get("batch_size") else None,
                 )
                 self._send_json({"report": report.to_payload(), "status": self._status_payload()})
+            elif parsed.path == "/api/compact":
+                report = app.system.run_memory_compaction(
+                    preview=bool(payload.get("preview", False)),
+                    batch_size=int(payload["batch_size"]) if payload.get("batch_size") else None,
+                )
+                self._send_json({"report": report.to_payload(), "status": self._status_payload()})
             elif parsed.path == "/api/rules/consolidate":
                 report = app.system.run_rule_consolidation()
                 self._send_json({"report": report.to_payload(), "status": self._status_payload()})
@@ -337,6 +348,7 @@ def build_handler(app: SDNCWebApp):
                 "expert_summary": app.system.expert_manager.summary(),
                 "rule_summary": app.system.rule_summary(),
                 "rule_link_summary": app.system.rule_link_summary(),
+                "memory_compaction_summary": app.system.memory_compaction_summary(),
                 "sensory_prototype_summary": app.system.sensory_prototype_summary(),
                 "file_queue": app.system.training_file_summary(),
                 "cognitive_core": {
@@ -544,6 +556,23 @@ def _cognitive_trace_payload(trace) -> dict[str, Any]:
         "surprise": trace.surprise,
         "uncertainty": trace.uncertainty,
         "payload": trace.payload,
+    }
+
+
+def _memory_compaction_payload(record) -> dict[str, Any]:
+    return {
+        "id": record.id,
+        "key": record.key,
+        "timestamp": record.timestamp,
+        "updated_at": record.updated_at,
+        "summary": record.summary,
+        "episode_ids": record.episode_ids,
+        "protected_episode_ids": record.protected_episode_ids,
+        "rule_ids": record.rule_ids,
+        "rule_link_ids": record.rule_link_ids,
+        "episode_count": record.episode_count,
+        "payload": record.payload,
+        "similarity": record.similarity,
     }
 
 

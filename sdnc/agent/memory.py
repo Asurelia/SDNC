@@ -148,6 +148,25 @@ class CognitiveTraceRecord:
 
 
 @dataclass
+class MemoryCompactionRecord:
+    """A compact, provenance-preserving prototype over repeated episodes."""
+
+    id: str
+    key: str
+    timestamp: float
+    updated_at: float
+    summary: str
+    centroid_embedding: np.ndarray
+    episode_ids: list[str]
+    protected_episode_ids: list[str]
+    rule_ids: list[str]
+    rule_link_ids: list[str]
+    episode_count: int
+    payload: dict[str, Any]
+    similarity: float = 0.0
+
+
+@dataclass
 class RuleRecord:
     """A provenance-backed neuro-symbolic routing rule."""
 
@@ -1083,6 +1102,100 @@ class PersistentMemory:
             ).fetchall()
         return [self._row_to_cognitive_trace(row) for row in rows]
 
+    def upsert_memory_compaction(
+        self,
+        key: str,
+        summary: str,
+        embedding: np.ndarray,
+        episode_ids: list[str],
+        protected_episode_ids: list[str] | None = None,
+        rule_ids: list[str] | None = None,
+        rule_link_ids: list[str] | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> str:
+        now = time()
+        protected_episode_ids = protected_episode_ids or []
+        rule_ids = rule_ids or []
+        rule_link_ids = rule_link_ids or []
+        payload = payload or {}
+        with self._lock:
+            existing = self.conn.execute(
+                "SELECT * FROM memory_compactions WHERE key = ?",
+                (key,),
+            ).fetchone()
+            if existing:
+                compaction_id = existing["id"]
+                old_episode_ids = json.loads(existing["episode_ids_json"] or "[]")
+                old_protected_ids = json.loads(existing["protected_episode_ids_json"] or "[]")
+                old_rule_ids = json.loads(existing["rule_ids_json"] or "[]")
+                old_rule_link_ids = json.loads(existing["rule_link_ids_json"] or "[]")
+                old_payload = json.loads(existing["payload_json"] or "{}")
+                merged_episode_ids = _dedupe_strings([*old_episode_ids, *episode_ids])
+                merged_protected_ids = _dedupe_strings([*old_protected_ids, *protected_episode_ids])
+                merged_rule_ids = _dedupe_strings([*old_rule_ids, *rule_ids])
+                merged_rule_link_ids = _dedupe_strings([*old_rule_link_ids, *rule_link_ids])
+                self.conn.execute(
+                    """
+                    UPDATE memory_compactions
+                    SET updated_at = ?, summary = ?, centroid_embedding = ?,
+                        episode_ids_json = ?, protected_episode_ids_json = ?,
+                        rule_ids_json = ?, rule_link_ids_json = ?, episode_count = ?,
+                        payload_json = ?
+                    WHERE key = ?
+                    """,
+                    (
+                        now,
+                        summary,
+                        self._pack_vector(self._unit(embedding)),
+                        json.dumps(merged_episode_ids, sort_keys=True, default=str),
+                        json.dumps(merged_protected_ids, sort_keys=True, default=str),
+                        json.dumps(merged_rule_ids, sort_keys=True, default=str),
+                        json.dumps(merged_rule_link_ids, sort_keys=True, default=str),
+                        len(merged_episode_ids),
+                        json.dumps({**old_payload, **payload}, sort_keys=True, default=str),
+                        key,
+                    ),
+                )
+            else:
+                compaction_id = str(uuid.uuid4())
+                compact_episode_ids = _dedupe_strings(episode_ids)
+                self.conn.execute(
+                    """
+                    INSERT INTO memory_compactions
+                        (id, key, timestamp, updated_at, summary, centroid_embedding,
+                         episode_ids_json, protected_episode_ids_json, rule_ids_json,
+                         rule_link_ids_json, episode_count, payload_json)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        compaction_id,
+                        key,
+                        now,
+                        now,
+                        summary,
+                        self._pack_vector(self._unit(embedding)),
+                        json.dumps(compact_episode_ids, sort_keys=True, default=str),
+                        json.dumps(_dedupe_strings(protected_episode_ids), sort_keys=True, default=str),
+                        json.dumps(_dedupe_strings(rule_ids), sort_keys=True, default=str),
+                        json.dumps(_dedupe_strings(rule_link_ids), sort_keys=True, default=str),
+                        len(compact_episode_ids),
+                        json.dumps(payload, sort_keys=True, default=str),
+                    ),
+                )
+            self.conn.commit()
+        return compaction_id
+
+    def recent_memory_compactions(self, limit: int = 20) -> list[MemoryCompactionRecord]:
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT * FROM memory_compactions ORDER BY updated_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [
+            self._row_to_memory_compaction(row, self._unpack_vector(row["centroid_embedding"]), 0.0)
+            for row in rows
+        ]
+
     def add_training_file(
         self,
         name: str,
@@ -1503,6 +1616,21 @@ class PersistentMemory:
                 payload_json TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS memory_compactions (
+                id TEXT PRIMARY KEY,
+                key TEXT UNIQUE NOT NULL,
+                timestamp REAL NOT NULL,
+                updated_at REAL NOT NULL,
+                summary TEXT NOT NULL,
+                centroid_embedding BLOB NOT NULL,
+                episode_ids_json TEXT NOT NULL,
+                protected_episode_ids_json TEXT NOT NULL,
+                rule_ids_json TEXT NOT NULL,
+                rule_link_ids_json TEXT NOT NULL,
+                episode_count INTEGER NOT NULL,
+                payload_json TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS training_files (
                 id TEXT PRIMARY KEY,
                 timestamp REAL NOT NULL,
@@ -1601,6 +1729,10 @@ class PersistentMemory:
                 ON cognitive_traces(timestamp DESC);
             CREATE INDEX IF NOT EXISTS idx_cognitive_traces_episode
                 ON cognitive_traces(episode_id);
+            CREATE INDEX IF NOT EXISTS idx_memory_compactions_updated_at
+                ON memory_compactions(updated_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_memory_compactions_episode_count
+                ON memory_compactions(episode_count DESC);
             CREATE INDEX IF NOT EXISTS idx_training_files_status
                 ON training_files(status);
             CREATE INDEX IF NOT EXISTS idx_training_files_updated_at
@@ -1733,6 +1865,28 @@ class PersistentMemory:
             surprise=float(row["surprise"]),
             uncertainty=float(row["uncertainty"]),
             payload=json.loads(row["payload_json"] or "{}"),
+        )
+
+    def _row_to_memory_compaction(
+        self,
+        row: sqlite3.Row,
+        embedding: np.ndarray,
+        similarity: float,
+    ) -> MemoryCompactionRecord:
+        return MemoryCompactionRecord(
+            id=row["id"],
+            key=row["key"],
+            timestamp=float(row["timestamp"]),
+            updated_at=float(row["updated_at"]),
+            summary=row["summary"],
+            centroid_embedding=embedding,
+            episode_ids=json.loads(row["episode_ids_json"] or "[]"),
+            protected_episode_ids=json.loads(row["protected_episode_ids_json"] or "[]"),
+            rule_ids=json.loads(row["rule_ids_json"] or "[]"),
+            rule_link_ids=json.loads(row["rule_link_ids_json"] or "[]"),
+            episode_count=int(row["episode_count"]),
+            payload=json.loads(row["payload_json"] or "{}"),
+            similarity=similarity,
         )
 
     def _row_to_rule(self, row: sqlite3.Row, embedding: np.ndarray, similarity: float) -> RuleRecord:

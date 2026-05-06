@@ -69,6 +69,13 @@ class AutonomousConfig:
     replay_strength: float = 0.35
     replay_max_drift: float = 0.08
 
+    # Memory compaction keeps SQLite useful without erasing source evidence.
+    # First compaction stores compact prototypes; raw episodes remain intact.
+    memory_compaction_recent_limit: int = 500
+    memory_compaction_batch_size: int = 80
+    memory_compaction_min_group_size: int = 3
+    memory_compaction_max_summary_chars: int = 900
+
     # Neuro-symbolic rules. Rules are local, provenance-backed hints for
     # routing and explanation; contradictory evidence weakens them.
     rule_recent_limit: int = 300

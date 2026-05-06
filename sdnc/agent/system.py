@@ -12,6 +12,7 @@ from typing import Any
 import numpy as np
 
 from sdnc.agent.budget import BudgetManager
+from sdnc.agent.compaction import MemoryCompactionCycle, MemoryCompactionReport
 from sdnc.agent.config import AutonomousConfig
 from sdnc.agent.context_lod import ContextLODCompressor
 from sdnc.agent.cognitive_core import CognitiveCore, CognitiveWorkspace
@@ -100,6 +101,7 @@ class InteractionLearningSystem:
         self.registry = registry or self._default_registry()
         self.improver = SelfImprovementCycle(self.config, self.memory, self.learner)
         self.sleeper = SleepConsolidationCycle(self.config, self.memory, self.learner)
+        self.compactor = MemoryCompactionCycle(self.config, self.memory)
         self.rule_engine = RuleEngine(self.config, self.memory)
         self.gap_learner = SelfDirectedLearner(
             self.config,
@@ -589,6 +591,9 @@ class InteractionLearningSystem:
     def recent_cognitive_traces(self, limit: int = 10):
         return self.memory.recent_cognitive_traces(limit)
 
+    def recent_memory_compactions(self, limit: int = 10):
+        return self.memory.recent_memory_compactions(limit)
+
     def queue_training_file(
         self,
         name: str,
@@ -811,6 +816,22 @@ class InteractionLearningSystem:
         )
         return report
 
+    def run_memory_compaction(
+        self,
+        preview: bool = False,
+        batch_size: int | None = None,
+    ) -> MemoryCompactionReport:
+        """Compact repeated memory patterns without deleting source evidence."""
+        report = self.compactor.run(preview=preview, batch_size=batch_size)
+        self._emit_event(
+            "compaction",
+            {
+                **report.to_payload(),
+                "memory_compaction_summary": self.memory_compaction_summary(),
+            },
+        )
+        return report
+
     def run_rule_consolidation(self) -> RuleConsolidationReport:
         """Extract provenance-backed rules from recent verified traces."""
         report = self.rule_engine.consolidate_recent()
@@ -868,6 +889,26 @@ class InteractionLearningSystem:
                     "target_name": link.payload.get("target_name", link.payload.get("prototype_key", "")),
                 }
                 for link in links[:8]
+            ],
+        }
+
+    def memory_compaction_summary(self) -> dict[str, Any]:
+        compactions = self.memory.recent_memory_compactions(limit=200)
+        protected_total = sum(len(item.protected_episode_ids) for item in compactions)
+        return {
+            "total": len(compactions),
+            "episode_count": sum(item.episode_count for item in compactions),
+            "protected_evidence_count": protected_total,
+            "top": [
+                {
+                    "key": item.key,
+                    "episode_count": item.episode_count,
+                    "protected_count": len(item.protected_episode_ids),
+                    "rule_count": len(item.rule_ids),
+                    "rule_link_count": len(item.rule_link_ids),
+                    "summary": item.summary[:220],
+                }
+                for item in sorted(compactions, key=lambda record: record.episode_count, reverse=True)[:8]
             ],
         }
 

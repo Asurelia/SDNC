@@ -413,9 +413,20 @@ Implemented third slice, 2026-05-06:
 - The local web cockpit now has a rules panel with rule/link inspection,
   consolidation, confidence feedback, enable/disable, and reject controls.
 
+Implemented fourth slice, 2026-05-06:
+
+- `sdnc/agent/compaction.py` adds `MemoryCompactionCycle` and
+  `MemoryCompactionReport` for provenance-preserving memory compaction.
+- SQLite now has `memory_compactions`, storing compact prototypes with source
+  episode ids, protected evidence ids, related rule ids, and rule-link ids.
+- Compaction groups repeated non-protected episodes while preserving raw source
+  episodes, rule provenance, counterexamples, and rule-link provenance.
+- CLI `/compact` and `/compact-preview`, API `POST /api/compact`, web status
+  `memory_compaction_summary`, and the cockpit "Compacter" button expose the
+  first controls.
+
 Still open:
 
-- Add memory compaction that preserves rule provenance and rejection evidence.
 - Add richer contradiction forking when two useful but incompatible rules exist.
 
 Acceptance criteria:

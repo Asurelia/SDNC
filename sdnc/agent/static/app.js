@@ -22,6 +22,7 @@ const $ = (id) => document.getElementById(id);
 const controls = {
   batchSlider: $("batch-slider"),
   chooseFilesBtn: $("choose-files-btn"),
+  compactBtn: $("compact-btn"),
   dropzone: $("dropzone"),
   fileInput: $("file-input"),
   improveBtn: $("improve-btn"),
@@ -98,6 +99,16 @@ controls.learnBtn.addEventListener("click", () => {
   if (state.busy) return;
   postJson("/api/learn-gap", {}, (payload) => {
     addLog("lacune", payload.report.summary);
+    renderStatus(payload.status);
+  });
+});
+controls.compactBtn.addEventListener("click", () => {
+  if (state.busy) return;
+  postJson("/api/compact", {
+    batch_size: Number(controls.batchSlider.value || 1),
+    preview: false,
+  }, (payload) => {
+    addLog("compaction", payload.report.summary);
     renderStatus(payload.status);
   });
 });
@@ -251,6 +262,7 @@ async function refreshRules() {
 async function renderRecent() {
   const data = await fetchJson("/api/recent");
   renderMemory(data.memories || []);
+  renderCompactions(data.memory_compactions || []);
   renderSensory(data.sensory_bindings || []);
   if (!state.lastResult) renderCognitivePanel((data.cognitive_traces || [])[0]?.payload || null);
 }
@@ -509,6 +521,20 @@ function renderMemory(memories) {
   }));
 }
 
+function renderCompactions(compactions) {
+  if (!compactions.length) {
+    $("compaction-list").innerHTML = '<span class="empty">aucune compaction</span>';
+    return;
+  }
+  $("compaction-list").replaceChildren(...compactions.map((record) => {
+    const el = document.createElement("article");
+    el.className = "memory";
+    const protectedCount = (record.protected_episode_ids || []).length;
+    el.innerHTML = `<strong>${escapeHtml(record.key)} · ${record.episode_count} ep · ${protectedCount} protégés</strong><p>${escapeHtml(record.summary).slice(0, 180)}</p>`;
+    return el;
+  }));
+}
+
 function renderSensory(bindings) {
   if (!bindings.length) {
     $("sensory-list").innerHTML = '<span class="empty">aucune observation</span>';
@@ -547,6 +573,8 @@ function handleEvent(event) {
     addLog("amélioration", payload.payload.summary || "cycle terminé");
   } else if (payload.event_type === "learning") {
     addLog("lacune", payload.payload.summary || "apprentissage terminé");
+  } else if (payload.event_type === "compaction") {
+    addLog("compaction", payload.payload.summary || "cycle terminé");
   } else if (payload.event_type === "rules") {
     addLog("règles", payload.payload.summary || payload.payload.action || "mise à jour");
     refreshRules().catch(() => {});
@@ -569,6 +597,7 @@ function connectEventStream() {
   source.addEventListener("feedback", handleEvent);
   source.addEventListener("improvement", handleEvent);
   source.addEventListener("learning", handleEvent);
+  source.addEventListener("compaction", handleEvent);
   source.addEventListener("rules", handleEvent);
   source.onerror = () => {
     source.close();
@@ -581,6 +610,7 @@ function setBusy(value) {
   for (const element of [
     controls.improveBtn,
     controls.learnBtn,
+    controls.compactBtn,
     controls.observeBtn,
     controls.processBatchBtn,
     controls.processNextBtn,

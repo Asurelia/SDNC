@@ -42,7 +42,8 @@ def main() -> int:
 
         print(
             "SDNC interaction learner. Commands: /feedback <score> [text], "
-            "/recent, /improve, /sleep, /sleep-preview, /rules, /learn, /quit"
+            "/recent, /improve, /sleep, /sleep-preview, /compact, "
+            "/compact-preview, /rules, /learn, /quit"
         )
         while True:
             text = input("sdnc> ").strip()
@@ -72,6 +73,12 @@ def main() -> int:
                 continue
             if text.startswith("/sleep"):
                 print(system.run_sleep_cycle().summary())
+                continue
+            if text.startswith("/compact-preview"):
+                print(system.run_memory_compaction(preview=True).summary())
+                continue
+            if text.startswith("/compact"):
+                print(system.run_memory_compaction().summary())
                 continue
             if text.startswith("/rules"):
                 print(system.run_rule_consolidation().summary())
