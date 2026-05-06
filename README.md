@@ -45,7 +45,8 @@ L'agent actuel sait:
 - creer, tester, promouvoir, refroidir ou rejeter des experts avec payloads
   compresses, checksums et decode `L0/L1/L2`;
 - lancer une evaluation locale qui mesure routing outil, memoire, surprise,
-  latence, budget chaud et respect du ratio sparse;
+  latence, budget chaud, respect du ratio sparse, regles, replay et prototypes
+  sensoriels;
 - lancer un cycle de sommeil/replay borne pour consolider les episodes utiles;
 - extraire des regles neuro-symboliques avec provenance et contre-exemples;
 - journaliser les evenements pour le monitoring local.

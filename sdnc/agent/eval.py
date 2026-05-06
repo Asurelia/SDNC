@@ -15,7 +15,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from sdnc.agent.config import AutonomousConfig
+from sdnc.agent.multimodal import ModalitySample
 from sdnc.agent.system import InteractionLearningSystem
 from sdnc.agent.types import InteractionResult
 
@@ -79,18 +82,38 @@ class CaseRun:
 
 
 @dataclass
+class FeatureProbeRun:
+    """Metrics for a component-level learning probe."""
+
+    probe_name: str
+    success: bool
+    metrics: dict[str, Any]
+    notes: list[str] = field(default_factory=list)
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "probe_name": self.probe_name,
+            "success": self.success,
+            "metrics": self.metrics,
+            "notes": list(self.notes),
+        }
+
+
+@dataclass
 class EvaluationReport:
     """Full benchmark report."""
 
     timestamp: float
     case_runs: list[CaseRun]
     summary: dict[str, Any]
+    feature_probes: list[FeatureProbeRun] = field(default_factory=list)
 
     def to_payload(self) -> dict[str, Any]:
         return {
             "timestamp": self.timestamp,
             "summary": self.summary,
             "case_runs": [run.to_payload() for run in self.case_runs],
+            "feature_probes": [probe.to_payload() for probe in self.feature_probes],
         }
 
     def to_json(self) -> str:
@@ -163,9 +186,15 @@ def run_evaluation(
             repeat_prompt = case.repeat_prompt or case.prompt
             second = _run_case(system, case, pass_name="repeat", prompt=repeat_prompt)
             runs.append(second)
+        feature_probes = _run_feature_probes(system)
     finally:
         system.close()
-    return EvaluationReport(timestamp=time.time(), case_runs=runs, summary=_summary(runs))
+    return EvaluationReport(
+        timestamp=time.time(),
+        case_runs=runs,
+        feature_probes=feature_probes,
+        summary=_summary(runs, feature_probes),
+    )
 
 
 def _run_case(
@@ -230,7 +259,130 @@ def _score_case(result: InteractionResult, case: EvaluationCase) -> tuple[bool, 
     return not notes, notes
 
 
-def _summary(runs: list[CaseRun]) -> dict[str, Any]:
+def _run_feature_probes(system: InteractionLearningSystem) -> list[FeatureProbeRun]:
+    return [
+        _probe_sensory_prototype_recall(system),
+        _probe_rule_consolidation(system),
+        _probe_sleep_replay(system),
+    ]
+
+
+def _probe_sensory_prototype_recall(system: InteractionLearningSystem) -> FeatureProbeRun:
+    image = np.zeros((5, 5, 3), dtype=np.uint8)
+    image[:, :, 2] = 255
+    first = system.observe(
+        [
+            ModalitySample("text", text="eval voyant bleu stable", label="eval-ui", source="eval", sample_id="proto-a"),
+            ModalitySample("image", content=image, text="voyant bleu", label="eval-ui", source="eval", sample_id="proto-a"),
+        ],
+        context={"mode": "think", "eval_probe": "sensory_prototype"},
+        learn=True,
+    )
+    second = system.observe(
+        [
+            ModalitySample("text", text="eval voyant bleu stable", label="eval-ui", source="eval", sample_id="proto-b"),
+            ModalitySample("image", content=image, text="voyant bleu", label="eval-ui", source="eval", sample_id="proto-b"),
+        ],
+        context={"mode": "think", "eval_probe": "sensory_prototype"},
+        learn=True,
+    )
+    prototypes = system.recent_sensory_prototypes(limit=10)
+    matches = second.metadata.get("sensory_prototypes", {}).get("matches", [])
+    learned = second.metadata.get("sensory_prototypes", {}).get("learned") or {}
+    notes: list[str] = []
+    if not matches:
+        notes.append("second observation did not match a sensory prototype")
+    if learned.get("observation_count", 0) < 2:
+        notes.append("prototype observation count did not consolidate")
+    return FeatureProbeRun(
+        probe_name="sensory_prototype_recall",
+        success=not notes,
+        metrics={
+            "prototype_count": len(prototypes),
+            "first_episode_id": first.episode_id,
+            "second_episode_id": second.episode_id,
+            "match_count": len(matches),
+            "learned_key": learned.get("key", ""),
+            "learned_observation_count": learned.get("observation_count", 0),
+        },
+        notes=notes,
+    )
+
+
+def _probe_rule_consolidation(system: InteractionLearningSystem) -> FeatureProbeRun:
+    embedding = system.encoder.encode("eval rule file search stable")
+    for index in range(2):
+        system.memory.store_episode(
+            text="eval rule file search stable",
+            context={
+                "__sdnc": {
+                    "tool_names": ["memory_recall", "file_search"],
+                    "proposed_tool_names": ["memory_recall", "file_search"],
+                    "successful_tools": ["file_search"],
+                }
+            },
+            embedding=embedding,
+            active_circuits=[0],
+            salience=0.82,
+            feedback_score=1.0,
+        )
+    report = system.run_rule_consolidation()
+    matches = system.rule_engine.match(embedding)
+    notes: list[str] = []
+    if report.promoted_count < 1:
+        notes.append("no rule was promoted")
+    if not any(match.tool_name == "file_search" for match in matches):
+        notes.append("promoted rule did not match its trigger")
+    return FeatureProbeRun(
+        probe_name="rule_consolidation",
+        success=not notes,
+        metrics={
+            "promoted_count": report.promoted_count,
+            "weakened_count": report.weakened_count,
+            "match_count": len(matches),
+            "matched_tools": [match.tool_name for match in matches],
+            "rule_total": system.rule_summary()["total"],
+        },
+        notes=notes,
+    )
+
+
+def _probe_sleep_replay(system: InteractionLearningSystem) -> FeatureProbeRun:
+    embedding = system.encoder.encode("eval sleep calculator stable")
+    for index in range(3):
+        system.memory.store_episode(
+            text="eval sleep calculator stable",
+            context={
+                "__sdnc": {
+                    "tool_names": ["memory_recall", "calculator"],
+                    "proposed_tool_names": ["memory_recall", "calculator"],
+                    "successful_tools": ["calculator"],
+                }
+            },
+            embedding=embedding,
+            active_circuits=[0],
+            salience=0.78 + index * 0.01,
+            feedback_score=1.0,
+        )
+    report = system.run_sleep_cycle(batch_size=8)
+    notes: list[str] = []
+    if report.replayed_count < 1:
+        notes.append("sleep replay did not replay any episode")
+    if report.strengthened_count < 1:
+        notes.append("sleep replay did not strengthen a procedure")
+    return FeatureProbeRun(
+        probe_name="sleep_replay_consolidation",
+        success=not notes,
+        metrics={
+            "replayed_count": report.replayed_count,
+            "strengthened_count": report.strengthened_count,
+            "rejected_count": report.rejected_count,
+        },
+        notes=notes,
+    )
+
+
+def _summary(runs: list[CaseRun], feature_probes: list[FeatureProbeRun]) -> dict[str, Any]:
     initial = [run for run in runs if run.pass_name == "initial"]
     repeat = [run for run in runs if run.pass_name == "repeat"]
     all_success = sum(1 for run in runs if run.success)
@@ -260,6 +412,16 @@ def _summary(runs: list[CaseRun]) -> dict[str, Any]:
         "avg_latency_ms": round(_mean(run.latency_ms for run in runs), 3),
         "avg_hot_vram_gb": round(_mean(run.hot_vram_gb for run in runs), 4),
         "planner_actions": planner_actions,
+        "feature_probe_count": len(feature_probes),
+        "feature_success_rate": round(_rate(probe.success for probe in feature_probes), 4),
+        "feature_probes": {
+            probe.probe_name: {
+                "success": probe.success,
+                "metrics": probe.metrics,
+                "notes": probe.notes,
+            }
+            for probe in feature_probes
+        },
     }
 
 

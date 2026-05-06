@@ -51,6 +51,8 @@ evaluation, UI, packaging, and stretch research, see
 - Minimal Phase 7 evaluation harness in `sdnc/agent/eval.py`, with CLI/JSON
   reports for tool routing, memory reuse, surprise, latency, hot VRAM estimate,
   and sparse activation limits.
+- Phase 7 advanced probes: `sdnc-eval` also measures sensory prototype recall,
+  rule consolidation, and sleep/replay consolidation in `feature_probes`.
 - First Phase 4 sleep/replay cycle in `sdnc/agent/replay.py`: salience-ranked
   queue, preview mode, bounded local plasticity, drift guard, negative-feedback
   holdout, repeated procedure strengthening, CLI `/sleep`, and API `/api/sleep`.

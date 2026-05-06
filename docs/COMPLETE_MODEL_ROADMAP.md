@@ -425,6 +425,13 @@ Tasks:
     uncertainty, latency, hot VRAM estimate, tools used, and active ratio;
   - `sdnc-eval` / `python -m sdnc.agent.eval` can emit JSON reports;
   - regression tests gate the 5 percent sparse activation limit.
+- Second implementation slice delivered, 2026-05-06:
+  - eval reports now include `feature_probes` for sensory prototype recall,
+    neuro-symbolic rule consolidation, and sleep/replay consolidation;
+  - the summary includes feature probe count, feature success rate, per-probe
+    metrics, and notes;
+  - regression tests require all three advanced probes to pass while preserving
+    the existing `case_runs` report shape.
 - Add benchmark datasets for:
   - repeated user preference learning;
   - file QA with memory;
