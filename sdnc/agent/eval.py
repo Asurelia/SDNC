@@ -263,6 +263,7 @@ def _run_feature_probes(system: InteractionLearningSystem) -> list[FeatureProbeR
     return [
         _probe_sensory_prototype_recall(system),
         _probe_rule_consolidation(system),
+        _probe_rule_conflict_fork(system),
         _probe_sleep_replay(system),
     ]
 
@@ -342,6 +343,51 @@ def _probe_rule_consolidation(system: InteractionLearningSystem) -> FeatureProbe
             "match_count": len(matches),
             "matched_tools": [match.tool_name for match in matches],
             "rule_total": system.rule_summary()["total"],
+        },
+        notes=notes,
+    )
+
+
+def _probe_rule_conflict_fork(system: InteractionLearningSystem) -> FeatureProbeRun:
+    embedding = system.encoder.encode("eval conflicting useful rule")
+    left_id = system.memory.upsert_rule(
+        name="rule:file_search:eval-conflict",
+        trigger_pattern="eval-conflict",
+        preconditions={"topic": "eval-conflict"},
+        action_tool="file_search",
+        expected_outcome="file_search should inspect local evidence",
+        trigger_embedding=embedding,
+        confidence=0.78,
+        provenance=["eval-left-a", "eval-left-b"],
+    )
+    right_id = system.memory.upsert_rule(
+        name="rule:memory_recall:eval-conflict",
+        trigger_pattern="eval-conflict",
+        preconditions={"topic": "eval-conflict"},
+        action_tool="memory_recall",
+        expected_outcome="memory_recall should reuse local evidence",
+        trigger_embedding=embedding,
+        confidence=0.76,
+        provenance=["eval-right-a", "eval-right-b"],
+    )
+    report = system.run_rule_consolidation()
+    conflicts = system.rule_conflict_records(limit=10)
+    enabled_ids = {rule.id for rule in system.memory.list_rules(status="enabled")}
+    notes: list[str] = []
+    if report.forked_count < 1:
+        notes.append("no rule conflict fork was created")
+    if not conflicts:
+        notes.append("conflict table has no fork records")
+    if {left_id, right_id} - enabled_ids:
+        notes.append("conflicting rules were not kept enabled")
+    return FeatureProbeRun(
+        probe_name="rule_conflict_fork",
+        success=not notes,
+        metrics={
+            "forked_count": report.forked_count,
+            "conflict_total": system.rule_conflict_summary()["total"],
+            "latest_topic": conflicts[0].topic if conflicts else "",
+            "rules_still_enabled": not ({left_id, right_id} - enabled_ids),
         },
         notes=notes,
     )

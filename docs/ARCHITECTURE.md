@@ -66,7 +66,9 @@ does not replace the specialized circuits.
 - `RuleEngine`: extracts provenance-backed neuro-symbolic rules from repeated
   verified traces. Rules hold trigger patterns, preconditions, action/tool,
   expected outcome, confidence, provenance, and counterexamples; they can
-  influence tool routing only while sufficiently confident.
+  influence tool routing only while sufficiently confident. When two useful
+  enabled rules share a trigger but propose incompatible tools, the engine stores
+  an explicit conflict fork instead of overwriting either rule.
 - `LocalCircuitLearner`: maintains circuit keys, liquid state, usage counters,
   and sparse inter-circuit weights. It activates at most 5 percent of circuits.
 - `PersistentMemory`: SQLite episodic and procedural memory. Episodes store
@@ -199,6 +201,7 @@ episodes + tool traces
   -> rule with provenance and expected outcome
   -> future tool-routing hint
   -> counterexample weakens or rejects, never overwrites
+  -> incompatible useful rules become explicit forks
 ```
 
 The `rules` SQLite table stores confidence, status, provenance ids, and
@@ -214,6 +217,14 @@ small payload such as expert name or prototype key. Runtime metadata reports
 attachment counts in `metadata.rule_attachments`, and web status exposes
 `rule_link_summary` so the user can inspect which learned hints shaped the
 current organization layer.
+
+The `rule_conflicts` SQLite table stores unresolved forks between useful but
+incompatible enabled rules. A fork is created only when both sides have enough
+provenance and confidence; both rules remain enabled while the conflict records
+topic, rule ids, action tools, evidence counts, and reason. `rule_conflict_summary`
+is exposed by the API/UI so the cognitive center can keep uncertainty visible
+and gather future evidence instead of choosing a premature single truth.
+
 Rules are also controllable through the local API/UI: the user can consolidate,
 enable, disable, reject, or add positive/counterexample feedback. These manual
 actions append `rules` events and update rule confidence/status; they do not
@@ -303,6 +314,8 @@ and audio decoding:
 - Sensory memory: `sensory_bindings` table for cross-modal event bindings.
 - Procedural memory: `procedures` table, mapping trigger embeddings to useful
   tools and success rates.
+- Neuro-symbolic conflict memory: `rule_conflicts` table, keeping incompatible
+  useful rules as inspectable forks with evidence and reason.
 - Training queue: `training_files` table, storing local file status, SHA-256,
   modality, preview, linked episode, and processing errors.
 
@@ -312,7 +325,8 @@ SDNC does not need Convex to function. The local source of truth is a SQLite
 database configured for local reliability:
 
 - WAL journaling so the web UI can read while the learner writes.
-- `episodes`, `procedures`, `experiments`, and `tool_stats` for learning state.
+- `episodes`, `procedures`, `experiments`, `rules`, `rule_links`,
+  `rule_conflicts`, and `tool_stats` for learning state.
 - `learning_gaps` and `source_stats` for lacune tracking and source reliability.
 - `sync_events` as an append-only event stream for interactions, feedback, and
   improvement/learning cycles.

@@ -29,6 +29,7 @@ def test_web_api_status_and_interact(tmp_path):
         assert status["expert_summary"]["total"] == 0
         assert status["rule_summary"]["total"] == 0
         assert status["rule_link_summary"]["total"] == 0
+        assert status["rule_conflict_summary"]["total"] == 0
         assert status["memory_compaction_summary"]["total"] == 0
         assert status["sensory_prototype_summary"]["total"] == 0
 
@@ -117,8 +118,33 @@ def test_web_api_status_and_interact(tmp_path):
         assert compact["report"]["summary"].startswith("Memory compaction")
         assert "memory_compaction_summary" in compact["status"]
 
+        conflict_embedding = app.system.encoder.encode("web conflict fork")
+        app.system.memory.upsert_rule(
+            name="rule:file_search:web-conflict",
+            trigger_pattern="web-conflict",
+            preconditions={"topic": "web-conflict"},
+            action_tool="file_search",
+            expected_outcome="file_search should inspect local evidence",
+            trigger_embedding=conflict_embedding,
+            confidence=0.79,
+            provenance=["web-left-a", "web-left-b"],
+        )
+        app.system.memory.upsert_rule(
+            name="rule:memory_recall:web-conflict",
+            trigger_pattern="web-conflict",
+            preconditions={"topic": "web-conflict"},
+            action_tool="memory_recall",
+            expected_outcome="memory_recall should reuse local evidence",
+            trigger_embedding=conflict_embedding,
+            confidence=0.77,
+            provenance=["web-right-a", "web-right-b"],
+        )
         rules = _post_json(f"{base}/api/rules/consolidate", {})
         assert rules["report"]["summary"].startswith("Rule consolidation:")
+        assert rules["report"]["forked_count"] >= 1
+        assert rules["status"]["rule_conflict_summary"]["total"] >= 1
+        rule_page_after_fork = _get_json(f"{base}/api/rules")
+        assert rule_page_after_fork["conflicts"][0]["topic"] == "web-conflict"
 
         events = _get_json(f"{base}/api/events")
         assert any(event["event_type"] == "interaction" for event in events["events"])

@@ -425,9 +425,18 @@ Implemented fourth slice, 2026-05-06:
   `memory_compaction_summary`, and the cockpit "Compacter" button expose the
   first controls.
 
-Still open:
+Implemented fifth slice, 2026-05-06:
 
-- Add richer contradiction forking when two useful but incompatible rules exist.
+- SQLite now has `rule_conflicts`, a provenance-backed table for useful but
+  incompatible enabled rules that share a trigger pattern.
+- `RuleEngine` forks conflicting rules after consolidation when both sides have
+  enough evidence/confidence and different action tools; both rules remain
+  enabled for future arbitration.
+- Rule consolidation reports `forked_count`, emits conflict summaries, and
+  records accepted `rule_conflict_fork` experiments.
+- API `GET /api/rules` and web status expose conflict records and
+  `rule_conflict_summary`; the cockpit now shows open rule forks beside rules
+  and links.
 
 Acceptance criteria:
 
@@ -441,7 +450,7 @@ Primary files:
 - `sdnc/agent/memory.py`
 - `sdnc/agent/learning.py`
 - `sdnc/agent/experts.py`
-- new `sdnc/agent/rules.py`
+- `sdnc/agent/rules.py`
 
 ## Phase 7 - Evaluation Harness
 
@@ -458,10 +467,11 @@ Tasks:
   - regression tests gate the 5 percent sparse activation limit.
 - Second implementation slice delivered, 2026-05-06:
   - eval reports now include `feature_probes` for sensory prototype recall,
-    neuro-symbolic rule consolidation, and sleep/replay consolidation;
+    neuro-symbolic rule consolidation, rule conflict forks, and sleep/replay
+    consolidation;
   - the summary includes feature probe count, feature success rate, per-probe
     metrics, and notes;
-  - regression tests require all three advanced probes to pass while preserving
+  - regression tests require all four advanced probes to pass while preserving
     the existing `case_runs` report shape.
 - Add benchmark datasets for:
   - repeated user preference learning;

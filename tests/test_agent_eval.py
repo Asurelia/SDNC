@@ -21,7 +21,7 @@ def test_default_evaluation_reports_learning_and_sparse_budget(tmp_path):
     rendered = json.loads(report.to_json())
 
     assert payload["summary"]["total_runs"] == 6
-    assert payload["summary"]["feature_probe_count"] == 3
+    assert payload["summary"]["feature_probe_count"] == 4
     assert payload["summary"]["feature_success_rate"] == 1.0
     assert payload["summary"]["within_sparse_limit"]
     assert payload["summary"]["max_active_ratio"] <= 0.05
@@ -29,7 +29,7 @@ def test_default_evaluation_reports_learning_and_sparse_budget(tmp_path):
     assert payload["summary"]["memory_hit_delta"] >= 0.0
     assert payload["summary"]["planner_actions"]["use_tools"] >= 2
     assert len(payload["case_runs"]) == 6
-    assert len(payload["feature_probes"]) == 3
+    assert len(payload["feature_probes"]) == 4
     assert any(run["case_name"] == "arithmetic_tool_routing" and run["success"] for run in payload["case_runs"])
     assert any(run["case_name"] == "file_search_routing" and run["success"] for run in payload["case_runs"])
     assert any(
@@ -41,6 +41,7 @@ def test_default_evaluation_reports_learning_and_sparse_budget(tmp_path):
     )
     assert payload["summary"]["feature_probes"]["sensory_prototype_recall"]["success"]
     assert payload["summary"]["feature_probes"]["rule_consolidation"]["metrics"]["promoted_count"] >= 1
+    assert payload["summary"]["feature_probes"]["rule_conflict_fork"]["metrics"]["forked_count"] >= 1
     assert payload["summary"]["feature_probes"]["sleep_replay_consolidation"]["metrics"]["replayed_count"] >= 1
     assert rendered["summary"]["total_runs"] == payload["summary"]["total_runs"]
     assert rendered["summary"]["feature_probe_count"] == payload["summary"]["feature_probe_count"]

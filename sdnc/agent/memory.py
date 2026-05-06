@@ -202,6 +202,22 @@ class RuleLinkRecord:
 
 
 @dataclass
+class RuleConflictRecord:
+    """A fork between useful, incompatible neuro-symbolic rules."""
+
+    id: str
+    timestamp: float
+    updated_at: float
+    topic: str
+    left_rule_id: str
+    right_rule_id: str
+    status: str
+    reason: str
+    evidence: dict[str, Any]
+    payload: dict[str, Any]
+
+
+@dataclass
 class ExpertRecord:
     """A self-managed SDNC expert asset."""
 
@@ -704,6 +720,97 @@ class PersistentMemory:
                 tuple(params),
             ).fetchall()
         return [self._row_to_rule_link(row) for row in rows]
+
+    def upsert_rule_conflict(
+        self,
+        topic: str,
+        left_rule_id: str,
+        right_rule_id: str,
+        reason: str,
+        evidence: dict[str, Any] | None = None,
+        payload: dict[str, Any] | None = None,
+        status: str = "forked",
+    ) -> tuple[str, bool]:
+        """Persist an unresolved fork between two still-useful rules."""
+        if left_rule_id == right_rule_id:
+            raise ValueError("rule conflict requires two distinct rule ids")
+        now = time()
+        topic = str(topic or "general").strip() or "general"
+        left_rule_id, right_rule_id = sorted((str(left_rule_id), str(right_rule_id)))
+        evidence = evidence or {}
+        payload = payload or {}
+        with self._lock:
+            existing = self.conn.execute(
+                """
+                SELECT * FROM rule_conflicts
+                WHERE topic = ? AND left_rule_id = ? AND right_rule_id = ?
+                """,
+                (topic, left_rule_id, right_rule_id),
+            ).fetchone()
+            if existing:
+                conflict_id = existing["id"]
+                old_evidence = json.loads(existing["evidence_json"] or "{}")
+                old_payload = json.loads(existing["payload_json"] or "{}")
+                self.conn.execute(
+                    """
+                    UPDATE rule_conflicts
+                    SET updated_at = ?, status = ?, reason = ?,
+                        evidence_json = ?, payload_json = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        now,
+                        status,
+                        reason,
+                        json.dumps({**old_evidence, **evidence}, sort_keys=True, default=str),
+                        json.dumps({**old_payload, **payload}, sort_keys=True, default=str),
+                        conflict_id,
+                    ),
+                )
+                created = False
+            else:
+                conflict_id = str(uuid.uuid4())
+                self.conn.execute(
+                    """
+                    INSERT INTO rule_conflicts
+                        (id, timestamp, updated_at, topic, left_rule_id, right_rule_id,
+                         status, reason, evidence_json, payload_json)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        conflict_id,
+                        now,
+                        now,
+                        topic,
+                        left_rule_id,
+                        right_rule_id,
+                        status,
+                        reason,
+                        json.dumps(evidence, sort_keys=True, default=str),
+                        json.dumps(payload, sort_keys=True, default=str),
+                    ),
+                )
+                created = True
+            self.conn.commit()
+        return conflict_id, created
+
+    def list_rule_conflicts(
+        self,
+        status: str | None = None,
+        limit: int = 100,
+    ) -> list[RuleConflictRecord]:
+        params: list[Any] = []
+        where = ""
+        if status:
+            where = "WHERE status = ?"
+            params.append(status)
+        params.append(int(limit))
+        with self._lock:
+            rows = self.conn.execute(
+                f"SELECT * FROM rule_conflicts {where} ORDER BY updated_at DESC LIMIT ?",
+                tuple(params),
+            ).fetchall()
+        return [self._row_to_rule_conflict(row) for row in rows]
 
     def record_tool_result(self, tool_name: str, success: bool) -> None:
         with self._lock:
@@ -1697,6 +1804,20 @@ class PersistentMemory:
                 UNIQUE(rule_id, target_kind, target_id, relation)
             );
 
+            CREATE TABLE IF NOT EXISTS rule_conflicts (
+                id TEXT PRIMARY KEY,
+                timestamp REAL NOT NULL,
+                updated_at REAL NOT NULL,
+                topic TEXT NOT NULL,
+                left_rule_id TEXT NOT NULL,
+                right_rule_id TEXT NOT NULL,
+                status TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                evidence_json TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                UNIQUE(topic, left_rule_id, right_rule_id)
+            );
+
             CREATE TABLE IF NOT EXISTS sync_events (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 timestamp REAL NOT NULL,
@@ -1755,6 +1876,10 @@ class PersistentMemory:
                 ON rule_links(target_kind, target_id);
             CREATE INDEX IF NOT EXISTS idx_rule_links_updated_at
                 ON rule_links(updated_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_rule_conflicts_status
+                ON rule_conflicts(status);
+            CREATE INDEX IF NOT EXISTS idx_rule_conflicts_updated_at
+                ON rule_conflicts(updated_at DESC);
             """
             )
             self.conn.commit()
@@ -1917,6 +2042,20 @@ class PersistentMemory:
             relation=row["relation"],
             confidence=float(row["confidence"]),
             provenance=json.loads(row["provenance_json"] or "[]"),
+            payload=json.loads(row["payload_json"] or "{}"),
+        )
+
+    def _row_to_rule_conflict(self, row: sqlite3.Row) -> RuleConflictRecord:
+        return RuleConflictRecord(
+            id=row["id"],
+            timestamp=float(row["timestamp"]),
+            updated_at=float(row["updated_at"]),
+            topic=row["topic"],
+            left_rule_id=row["left_rule_id"],
+            right_rule_id=row["right_rule_id"],
+            status=row["status"],
+            reason=row["reason"],
+            evidence=json.loads(row["evidence_json"] or "{}"),
             payload=json.loads(row["payload_json"] or "{}"),
         )
 

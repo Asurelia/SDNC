@@ -840,6 +840,7 @@ class InteractionLearningSystem:
             {
                 **report.to_payload(),
                 "rule_summary": self.rule_summary(),
+                "rule_conflict_summary": self.rule_conflict_summary(),
             },
         )
         return report
@@ -892,6 +893,31 @@ class InteractionLearningSystem:
             ],
         }
 
+    def rule_conflict_summary(self) -> dict[str, Any]:
+        conflicts = self.memory.list_rule_conflicts(limit=200)
+        by_status: dict[str, int] = {}
+        by_topic: dict[str, int] = {}
+        for conflict in conflicts:
+            by_status[conflict.status] = by_status.get(conflict.status, 0) + 1
+            by_topic[conflict.topic] = by_topic.get(conflict.topic, 0) + 1
+        return {
+            "total": len(conflicts),
+            "by_status": by_status,
+            "by_topic": dict(sorted(by_topic.items(), key=lambda item: item[1], reverse=True)[:8]),
+            "latest": [
+                {
+                    "topic": conflict.topic,
+                    "status": conflict.status,
+                    "left_rule_id": conflict.left_rule_id,
+                    "right_rule_id": conflict.right_rule_id,
+                    "reason": conflict.reason,
+                    "left_tool": conflict.payload.get("left_action_tool", ""),
+                    "right_tool": conflict.payload.get("right_action_tool", ""),
+                }
+                for conflict in conflicts[:8]
+            ],
+        }
+
     def memory_compaction_summary(self) -> dict[str, Any]:
         compactions = self.memory.recent_memory_compactions(limit=200)
         protected_total = sum(len(item.protected_episode_ids) for item in compactions)
@@ -917,6 +943,9 @@ class InteractionLearningSystem:
 
     def rule_link_records(self, limit: int = 100):
         return self.memory.list_rule_links(limit=limit)
+
+    def rule_conflict_records(self, limit: int = 100):
+        return self.memory.list_rule_conflicts(limit=limit)
 
     def set_rule_status(self, rule_id: str, status: str, reason: str = ""):
         if status not in {"enabled", "disabled", "rejected"}:

@@ -94,8 +94,13 @@ def build_handler(app: SDNCWebApp):
                     {
                         "rules": [_rule_payload(rule) for rule in app.system.rule_records()],
                         "links": [_rule_link_payload(link) for link in app.system.rule_link_records(limit=120)],
+                        "conflicts": [
+                            _rule_conflict_payload(conflict)
+                            for conflict in app.system.rule_conflict_records(limit=120)
+                        ],
                         "summary": app.system.rule_summary(),
                         "link_summary": app.system.rule_link_summary(),
+                        "conflict_summary": app.system.rule_conflict_summary(),
                     }
                 )
             elif parsed.path == "/api/stream":
@@ -261,6 +266,10 @@ def build_handler(app: SDNCWebApp):
                         "rule": _rule_payload(rule),
                         "rules": [_rule_payload(item) for item in app.system.rule_records()],
                         "links": [_rule_link_payload(link) for link in app.system.rule_link_records(limit=120)],
+                        "conflicts": [
+                            _rule_conflict_payload(conflict)
+                            for conflict in app.system.rule_conflict_records(limit=120)
+                        ],
                         "status": self._status_payload(),
                     }
                 )
@@ -283,6 +292,10 @@ def build_handler(app: SDNCWebApp):
                         "rule": _rule_payload(rule),
                         "rules": [_rule_payload(item) for item in app.system.rule_records()],
                         "links": [_rule_link_payload(link) for link in app.system.rule_link_records(limit=120)],
+                        "conflicts": [
+                            _rule_conflict_payload(conflict)
+                            for conflict in app.system.rule_conflict_records(limit=120)
+                        ],
                         "status": self._status_payload(),
                     }
                 )
@@ -348,6 +361,7 @@ def build_handler(app: SDNCWebApp):
                 "expert_summary": app.system.expert_manager.summary(),
                 "rule_summary": app.system.rule_summary(),
                 "rule_link_summary": app.system.rule_link_summary(),
+                "rule_conflict_summary": app.system.rule_conflict_summary(),
                 "memory_compaction_summary": app.system.memory_compaction_summary(),
                 "sensory_prototype_summary": app.system.sensory_prototype_summary(),
                 "file_queue": app.system.training_file_summary(),
@@ -540,6 +554,21 @@ def _rule_link_payload(link) -> dict[str, Any]:
         "confidence": link.confidence,
         "provenance": link.provenance,
         "payload": link.payload,
+    }
+
+
+def _rule_conflict_payload(conflict) -> dict[str, Any]:
+    return {
+        "id": conflict.id,
+        "timestamp": conflict.timestamp,
+        "updated_at": conflict.updated_at,
+        "topic": conflict.topic,
+        "left_rule_id": conflict.left_rule_id,
+        "right_rule_id": conflict.right_rule_id,
+        "status": conflict.status,
+        "reason": conflict.reason,
+        "evidence": conflict.evidence,
+        "payload": conflict.payload,
     }
 
 

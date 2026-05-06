@@ -52,7 +52,8 @@ evaluation, UI, packaging, and stretch research, see
   reports for tool routing, memory reuse, surprise, latency, hot VRAM estimate,
   and sparse activation limits.
 - Phase 7 advanced probes: `sdnc-eval` also measures sensory prototype recall,
-  rule consolidation, and sleep/replay consolidation in `feature_probes`.
+  rule consolidation, rule conflict forks, and sleep/replay consolidation in
+  `feature_probes`.
 - First Phase 4 sleep/replay cycle in `sdnc/agent/replay.py`: salience-ranked
   queue, preview mode, bounded local plasticity, drift guard, negative-feedback
   holdout, repeated procedure strengthening, CLI `/sleep`, and API `/api/sleep`.
@@ -68,6 +69,10 @@ evaluation, UI, packaging, and stretch research, see
 - Phase 6 memory compaction: repeated non-protected episodes become compact
   `memory_compactions` prototypes while raw source episodes, rule provenance,
   counterexamples, and rule links stay preserved.
+- Phase 6 rule conflict forks: useful enabled rules with the same trigger but
+  incompatible action tools are stored in `rule_conflicts`, surfaced through
+  `rule_conflict_summary`, and kept alive for later evidence instead of being
+  overwritten.
 - First Phase 5 sensory prototypes in `sdnc/agent/sensory_prototypes.py`:
   repeated multimodal events get compact prototype identity, observation count,
   confidence, metadata exposure, and `/api/recent` visibility.
@@ -104,7 +109,7 @@ evaluation, UI, packaging, and stretch research, see
    - rank future experiments by uncertainty and usefulness.
 6. Harden neuro-symbolic rules:
    - add richer inspection for rule-to-expert/prototype links;
-   - add contradiction forking when two rules both have useful evidence.
+   - add arbitration policies for resolving or contextualizing open rule forks.
 7. Upgrade sensory bridges:
    - frozen CLIP image embedding -> autonomous interaction vector;
    - frozen Whisper/audio embedding -> autonomous interaction vector;

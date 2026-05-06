@@ -1,6 +1,6 @@
 # SDNC Training Dashboard
 
-Last updated: 2026-05-03.
+Last updated: 2026-05-06.
 
 The dashboard borrows the ergonomic shape of defendGPT's training UI: data
 preparation, launch controls, resume/review paths, live metrics, logs, and
@@ -40,6 +40,8 @@ under `AutonomousConfig.file_queue_path` and indexed in SQLite.
 - `Outils` permits normal SDNC tool selection during file processing.
 - File cards expose action buttons for processing, pause, resume, review, and
   manual status correction.
+- `Règles` consolidates verified traces, shows rule links to experts/prototypes,
+  and surfaces open rule conflict forks when two useful rules disagree.
 
 ## API
 

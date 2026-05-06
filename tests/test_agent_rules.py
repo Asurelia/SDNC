@@ -97,6 +97,52 @@ def test_rule_contradiction_weakens_existing_rule(tmp_path):
     memory.close()
 
 
+def test_rule_consolidation_forks_incompatible_useful_rules(tmp_path):
+    config = AutonomousConfig(input_dim=8, n_circuits=20, rule_min_evidence=2)
+    memory = PersistentMemory(tmp_path / "memory.sqlite3", embedding_dim=8)
+    engine = RuleEngine(config, memory)
+    embedding = np.ones(8, dtype=np.float32)
+    embedding /= np.linalg.norm(embedding)
+    try:
+        left_id = memory.upsert_rule(
+            name="rule:file_search:sdnc-topic",
+            trigger_pattern="sdnc-topic",
+            preconditions={"topic": "sdnc-topic"},
+            action_tool="file_search",
+            expected_outcome="file_search should inspect local SDNC files",
+            trigger_embedding=embedding,
+            confidence=0.78,
+            provenance=["left-a", "left-b"],
+        )
+        right_id = memory.upsert_rule(
+            name="rule:memory_recall:sdnc-topic",
+            trigger_pattern="sdnc-topic",
+            preconditions={"topic": "sdnc-topic"},
+            action_tool="memory_recall",
+            expected_outcome="memory_recall should reuse SDNC memories",
+            trigger_embedding=embedding,
+            confidence=0.74,
+            provenance=["right-a", "right-b"],
+        )
+
+        report = engine.consolidate_recent()
+        conflicts = memory.list_rule_conflicts()
+        enabled = memory.list_rules(status="enabled")
+
+        assert report.forked_count == 1
+        assert conflicts[0].topic == "sdnc-topic"
+        assert conflicts[0].status == "forked"
+        assert {conflicts[0].left_rule_id, conflicts[0].right_rule_id} == {left_id, right_id}
+        assert conflicts[0].evidence["rules"][left_id]["action_tool"] == "file_search"
+        assert {rule.id for rule in enabled} == {left_id, right_id}
+
+        second_report = engine.consolidate_recent()
+        assert second_report.forked_count == 0
+        assert len(memory.list_rule_conflicts()) == 1
+    finally:
+        memory.close()
+
+
 def test_rule_engine_links_rules_to_experts_with_provenance(tmp_path):
     config = AutonomousConfig(
         input_dim=24,

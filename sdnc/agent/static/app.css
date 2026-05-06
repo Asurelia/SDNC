@@ -514,7 +514,8 @@ h3 {
 .memory-list,
 .log-list,
 .rule-list,
-.rule-link-list {
+.rule-link-list,
+.rule-conflict-list {
   display: grid;
   gap: 8px;
   max-height: 260px;
@@ -525,7 +526,8 @@ h3 {
 .trace,
 .memory,
 .rule-card,
-.rule-link {
+.rule-link,
+.rule-conflict {
   padding: 9px;
 }
 
@@ -533,7 +535,8 @@ h3 {
   max-height: 360px;
 }
 
-.rule-link-list {
+.rule-link-list,
+.rule-conflict-list {
   max-height: 180px;
   margin-top: 10px;
   padding-top: 10px;
@@ -541,7 +544,8 @@ h3 {
 }
 
 .rule-card,
-.rule-link {
+.rule-link,
+.rule-conflict {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: rgba(238, 243, 239, 0.045);
@@ -573,7 +577,8 @@ h3 {
 }
 
 .rule-body p,
-.rule-link p {
+.rule-link p,
+.rule-conflict p {
   margin-top: 4px;
   color: var(--muted);
   font-size: 12px;
@@ -587,7 +592,8 @@ h3 {
   gap: 6px;
 }
 
-.rule-link strong {
+.rule-link strong,
+.rule-conflict strong {
   display: block;
   color: var(--lime);
   font-size: 12px;

@@ -3,6 +3,7 @@ const state = {
   files: [],
   lastEventId: 0,
   lastResult: null,
+  ruleConflicts: [],
   ruleLinks: [],
   rules: [],
 };
@@ -294,6 +295,7 @@ function renderStatus(status) {
 function renderRules(data) {
   state.rules = data.rules || [];
   state.ruleLinks = data.links || [];
+  state.ruleConflicts = data.conflicts || [];
   const list = $("rule-list");
   if (!state.rules.length) {
     list.innerHTML = '<span class="empty">aucune règle</span>';
@@ -304,13 +306,27 @@ function renderRules(data) {
   const links = $("rule-link-list");
   if (!state.ruleLinks.length) {
     links.innerHTML = '<span class="empty">aucun lien</span>';
+  } else {
+    links.replaceChildren(...state.ruleLinks.slice(0, 8).map((link) => {
+      const el = document.createElement("article");
+      el.className = "rule-link";
+      const label = link.payload?.target_name || link.payload?.prototype_key || link.target_id;
+      el.innerHTML = `<strong>${escapeHtml(link.target_kind)} · ${escapeHtml(label)}</strong><p>${escapeHtml(link.relation)} · ${fmt(link.confidence)} · ${link.provenance.length} preuves</p>`;
+      return el;
+    }));
+  }
+
+  const conflicts = $("rule-conflict-list");
+  if (!state.ruleConflicts.length) {
+    conflicts.innerHTML = '<span class="empty">aucun conflit</span>';
     return;
   }
-  links.replaceChildren(...state.ruleLinks.slice(0, 8).map((link) => {
+  conflicts.replaceChildren(...state.ruleConflicts.slice(0, 8).map((conflict) => {
     const el = document.createElement("article");
-    el.className = "rule-link";
-    const label = link.payload?.target_name || link.payload?.prototype_key || link.target_id;
-    el.innerHTML = `<strong>${escapeHtml(link.target_kind)} · ${escapeHtml(label)}</strong><p>${escapeHtml(link.relation)} · ${fmt(link.confidence)} · ${link.provenance.length} preuves</p>`;
+    el.className = "rule-conflict";
+    const left = conflict.payload?.left_action_tool || conflict.left_rule_id;
+    const right = conflict.payload?.right_action_tool || conflict.right_rule_id;
+    el.innerHTML = `<strong>${escapeHtml(conflict.topic)} · ${escapeHtml(conflict.status)}</strong><p>${escapeHtml(left)} ↔ ${escapeHtml(right)} · ${escapeHtml(conflict.reason)}</p>`;
     return el;
   }));
 }
@@ -355,7 +371,7 @@ async function consolidateRules() {
 async function setRuleStatus(ruleId, status) {
   if (state.busy) return;
   await postJson("/api/rules/status", { rule_id: ruleId, status, reason: "web-ui" }, (payload) => {
-    renderRules({ rules: payload.rules, links: payload.links });
+    renderRules({ rules: payload.rules, links: payload.links, conflicts: payload.conflicts });
     renderStatus(payload.status);
     addLog("règles", `${status} · ${payload.rule.name}`);
   });
@@ -364,7 +380,7 @@ async function setRuleStatus(ruleId, status) {
 async function giveRuleFeedback(ruleId, score) {
   if (state.busy) return;
   await postJson("/api/rules/feedback", { rule_id: ruleId, score, note: "web-ui" }, (payload) => {
-    renderRules({ rules: payload.rules, links: payload.links });
+    renderRules({ rules: payload.rules, links: payload.links, conflicts: payload.conflicts });
     renderStatus(payload.status);
     addLog("règles", `${score > 0 ? "renforcée" : "affaiblie"} · ${payload.rule.name}`);
   });

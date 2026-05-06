@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 from dataclasses import dataclass, field
+from itertools import combinations
 from time import time
 from typing import Any
 
@@ -70,6 +71,10 @@ class RuleConsolidationReport:
     def weakened_count(self) -> int:
         return sum(1 for action in self.actions if action.kind == "rule_contradiction" and action.accepted)
 
+    @property
+    def forked_count(self) -> int:
+        return sum(1 for action in self.actions if action.kind == "rule_conflict_fork" and action.accepted)
+
     def add(self, kind: str, accepted: bool, reason: str, **details: Any) -> None:
         self.actions.append(RuleAction(kind=kind, accepted=accepted, reason=reason, details=details))
 
@@ -79,6 +84,7 @@ class RuleConsolidationReport:
         return (
             f"Rule consolidation: {self.promoted_count} promoted, "
             f"{self.weakened_count} weakened, "
+            f"{self.forked_count} forked, "
             f"{len(self.actions) - self.accepted_count} rejected."
         )
 
@@ -88,6 +94,7 @@ class RuleConsolidationReport:
             "accepted_count": self.accepted_count,
             "promoted_count": self.promoted_count,
             "weakened_count": self.weakened_count,
+            "forked_count": self.forked_count,
             "summary": self.summary(),
             "actions": [
                 {
@@ -166,6 +173,7 @@ class RuleEngine:
         buckets = self._success_buckets(records)
         self._scan_existing_contradictions(records, report)
         if not buckets:
+            self._fork_incompatible_rules(report)
             if not report.actions:
                 report.add("rule_scan", False, "no repeated successful tool traces")
             return report
@@ -245,6 +253,7 @@ class RuleEngine:
                 counterexamples=len(failures),
                 confidence=confidence,
             )
+        self._fork_incompatible_rules(report)
         return report
 
     def _scan_existing_contradictions(
@@ -256,6 +265,75 @@ class RuleEngine:
             failures = self._counterexamples(records, rule.action_tool, rule.trigger_pattern)
             if len(failures) >= self.config.rule_min_evidence:
                 self._weaken_existing(rule.name, failures, report)
+
+    def _fork_incompatible_rules(self, report: RuleConsolidationReport) -> None:
+        """Keep useful conflicting rules as explicit forks for later arbitration."""
+        enabled = [
+            rule
+            for rule in self.memory.list_rules(status="enabled")
+            if (
+                rule.confidence >= self.config.rule_min_confidence
+                and len(rule.provenance) >= self.config.rule_min_evidence
+            )
+        ]
+        by_topic: dict[str, list[RuleRecord]] = defaultdict(list)
+        for rule in enabled:
+            by_topic[rule.trigger_pattern].append(rule)
+
+        for topic, rules in sorted(by_topic.items()):
+            if len(rules) < 2:
+                continue
+            for left, right in combinations(sorted(rules, key=lambda item: item.id), 2):
+                if left.action_tool == right.action_tool:
+                    continue
+                evidence = {
+                    "topic": topic,
+                    "min_evidence": self.config.rule_min_evidence,
+                    "rules": {
+                        left.id: self._conflict_rule_evidence(left),
+                        right.id: self._conflict_rule_evidence(right),
+                    },
+                }
+                conflict_id, created = self.memory.upsert_rule_conflict(
+                    topic=topic,
+                    left_rule_id=left.id,
+                    right_rule_id=right.id,
+                    reason="same trigger pattern proposes incompatible tools",
+                    evidence=evidence,
+                    payload={
+                        "created_by": "rule_consolidation",
+                        "left_rule_name": left.name,
+                        "right_rule_name": right.name,
+                        "left_action_tool": left.action_tool,
+                        "right_action_tool": right.action_tool,
+                    },
+                    status="forked",
+                )
+                if not created:
+                    continue
+                self.memory.record_experiment(
+                    kind="rule_conflict_fork",
+                    candidate=f"{topic}:{left.action_tool}|{right.action_tool}",
+                    accepted=True,
+                    metrics={
+                        "left_confidence": left.confidence,
+                        "right_confidence": right.confidence,
+                        "left_evidence": len(left.provenance),
+                        "right_evidence": len(right.provenance),
+                    },
+                    notes="incompatible useful rules kept as competing forks",
+                )
+                report.add(
+                    "rule_conflict_fork",
+                    True,
+                    f"forked incompatible rules for {topic}",
+                    conflict_id=conflict_id,
+                    topic=topic,
+                    left_rule_id=left.id,
+                    right_rule_id=right.id,
+                    left_tool=left.action_tool,
+                    right_tool=right.action_tool,
+                )
 
     def record_rule_outcomes(
         self,
@@ -349,6 +427,16 @@ class RuleEngine:
         raw = 0.48 + evidence_count * self.config.rule_success_boost
         raw -= counterexample_count * self.config.rule_counterexample_penalty
         return round(float(np.clip(raw, 0.0, 1.0)), 6)
+
+    def _conflict_rule_evidence(self, rule: RuleRecord) -> dict[str, Any]:
+        return {
+            "name": rule.name,
+            "action_tool": rule.action_tool,
+            "confidence": rule.confidence,
+            "provenance_count": len(rule.provenance),
+            "counterexample_count": len(rule.counterexamples),
+            "status": rule.status,
+        }
 
     def _mean_embedding(self, records: list[MemoryRecord]) -> np.ndarray:
         matrix = np.stack([self._unit(record.embedding) for record in records])
