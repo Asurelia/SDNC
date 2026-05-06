@@ -121,7 +121,13 @@ Implemented files:
 - `sdnc.agent.perception.PerceptionBus`
 - `sdnc.agent.multimodal.LocalMultimodalEncoder`
 - `PersistentMemory.sensory_bindings` table
+- `PersistentMemory.sensory_prototypes` table
 - web endpoint `POST /api/observe`
+
+Repeated sensory events are also compacted into prototypes. A prototype stores a
+centroid, modalities, sample/source ids, confidence, observation count, and
+compact features. This gives SDNC a reusable identity anchor for recurring
+multimodal situations without keeping raw media or long descriptions hot.
 
 ## Expert Capacity
 

@@ -91,6 +91,26 @@ class SensoryBindingRecord:
 
 
 @dataclass
+class SensoryPrototypeRecord:
+    """A compact prototype for repeated sensory events."""
+
+    id: str
+    key: str
+    timestamp: float
+    updated_at: float
+    modalities: list[str]
+    sources: list[str]
+    sample_ids: list[str]
+    summary: str
+    centroid_embedding: np.ndarray
+    observation_count: int
+    confidence: float
+    features: dict[str, Any]
+    payload: dict[str, Any]
+    similarity: float = 0.0
+
+
+@dataclass
 class TrainingFileRecord:
     """A local file queued for SDNC experience learning."""
 
@@ -748,6 +768,123 @@ class PersistentMemory:
         bindings.sort(key=lambda item: (item.similarity, item.salience), reverse=True)
         return bindings[:top_k]
 
+    def upsert_sensory_prototype(
+        self,
+        key: str,
+        modalities: list[str],
+        source: str,
+        sample_ids: list[str],
+        summary: str,
+        embedding: np.ndarray,
+        confidence: float,
+        features: dict[str, Any],
+        payload: dict[str, Any] | None = None,
+    ) -> str:
+        payload = payload or {}
+        now = time()
+        with self._lock:
+            existing = self.conn.execute(
+                "SELECT * FROM sensory_prototypes WHERE key = ?",
+                (key,),
+            ).fetchone()
+            if existing:
+                prototype_id = existing["id"]
+                old_count = int(existing["observation_count"])
+                old_centroid = self._unpack_vector(existing["centroid_embedding"])
+                new_count = old_count + 1
+                centroid = self._unit((old_centroid * old_count + self._unit(embedding)) / new_count)
+                sources = _dedupe_strings([*json.loads(existing["sources_json"] or "[]"), source])[:32]
+                merged_sample_ids = _dedupe_strings(
+                    [*json.loads(existing["sample_ids_json"] or "[]"), *sample_ids]
+                )[:64]
+                merged_modalities = _dedupe_strings(
+                    [*json.loads(existing["modalities_json"] or "[]"), *modalities]
+                )
+                old_payload = json.loads(existing["payload_json"] or "{}")
+                old_features = json.loads(existing["features_json"] or "{}")
+                self.conn.execute(
+                    """
+                    UPDATE sensory_prototypes
+                    SET updated_at = ?, modalities_json = ?, sources_json = ?,
+                        sample_ids_json = ?, summary = ?, centroid_embedding = ?,
+                        observation_count = ?, confidence = ?, features_json = ?,
+                        payload_json = ?
+                    WHERE key = ?
+                    """,
+                    (
+                        now,
+                        json.dumps(merged_modalities, sort_keys=True, default=str),
+                        json.dumps(sources, sort_keys=True, default=str),
+                        json.dumps(merged_sample_ids, sort_keys=True, default=str),
+                        summary,
+                        self._pack_vector(centroid),
+                        new_count,
+                        float(max(float(existing["confidence"]), confidence)),
+                        json.dumps({**old_features, **features}, sort_keys=True, default=str),
+                        json.dumps({**old_payload, **payload}, sort_keys=True, default=str),
+                        key,
+                    ),
+                )
+            else:
+                prototype_id = str(uuid.uuid4())
+                self.conn.execute(
+                    """
+                    INSERT INTO sensory_prototypes
+                        (id, key, timestamp, updated_at, modalities_json, sources_json,
+                         sample_ids_json, summary, centroid_embedding, observation_count,
+                         confidence, features_json, payload_json)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        prototype_id,
+                        key,
+                        now,
+                        now,
+                        json.dumps(_dedupe_strings(modalities), sort_keys=True, default=str),
+                        json.dumps(_dedupe_strings([source]), sort_keys=True, default=str),
+                        json.dumps(_dedupe_strings(sample_ids), sort_keys=True, default=str),
+                        summary,
+                        self._pack_vector(self._unit(embedding)),
+                        1,
+                        float(confidence),
+                        json.dumps(features, sort_keys=True, default=str),
+                        json.dumps(payload, sort_keys=True, default=str),
+                    ),
+                )
+            self.conn.commit()
+        return prototype_id
+
+    def retrieve_sensory_prototypes(
+        self,
+        embedding: np.ndarray,
+        top_k: int = 5,
+    ) -> list[SensoryPrototypeRecord]:
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT * FROM sensory_prototypes ORDER BY confidence DESC, observation_count DESC"
+            ).fetchall()
+        query = self._unit(embedding)
+        prototypes: list[SensoryPrototypeRecord] = []
+        for row in rows:
+            centroid = self._unpack_vector(row["centroid_embedding"])
+            prototypes.append(self._row_to_sensory_prototype(row, centroid, float(np.dot(query, self._unit(centroid)))))
+        prototypes.sort(
+            key=lambda item: (item.similarity * 0.6 + item.confidence * 0.25 + min(item.observation_count, 10) * 0.015),
+            reverse=True,
+        )
+        return prototypes[:top_k]
+
+    def recent_sensory_prototypes(self, limit: int = 20) -> list[SensoryPrototypeRecord]:
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT * FROM sensory_prototypes ORDER BY updated_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [
+            self._row_to_sensory_prototype(row, self._unpack_vector(row["centroid_embedding"]), 0.0)
+            for row in rows
+        ]
+
     def store_cognitive_trace(
         self,
         trace_id: str,
@@ -1193,6 +1330,22 @@ class PersistentMemory:
                 context_json TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS sensory_prototypes (
+                id TEXT PRIMARY KEY,
+                key TEXT UNIQUE NOT NULL,
+                timestamp REAL NOT NULL,
+                updated_at REAL NOT NULL,
+                modalities_json TEXT NOT NULL,
+                sources_json TEXT NOT NULL,
+                sample_ids_json TEXT NOT NULL,
+                summary TEXT NOT NULL,
+                centroid_embedding BLOB NOT NULL,
+                observation_count INTEGER NOT NULL,
+                confidence REAL NOT NULL,
+                features_json TEXT NOT NULL,
+                payload_json TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS cognitive_traces (
                 id TEXT PRIMARY KEY,
                 timestamp REAL NOT NULL,
@@ -1283,6 +1436,10 @@ class PersistentMemory:
                 ON sensory_bindings(timestamp DESC);
             CREATE INDEX IF NOT EXISTS idx_sensory_bindings_source
                 ON sensory_bindings(source);
+            CREATE INDEX IF NOT EXISTS idx_sensory_prototypes_updated_at
+                ON sensory_prototypes(updated_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_sensory_prototypes_confidence
+                ON sensory_prototypes(confidence DESC);
             CREATE INDEX IF NOT EXISTS idx_cognitive_traces_timestamp
                 ON cognitive_traces(timestamp DESC);
             CREATE INDEX IF NOT EXISTS idx_cognitive_traces_episode
@@ -1356,6 +1513,29 @@ class PersistentMemory:
             salience=float(row["salience"]),
             features=json.loads(row["features_json"] or "{}"),
             context=json.loads(row["context_json"] or "{}"),
+            similarity=similarity,
+        )
+
+    def _row_to_sensory_prototype(
+        self,
+        row: sqlite3.Row,
+        embedding: np.ndarray,
+        similarity: float,
+    ) -> SensoryPrototypeRecord:
+        return SensoryPrototypeRecord(
+            id=row["id"],
+            key=row["key"],
+            timestamp=float(row["timestamp"]),
+            updated_at=float(row["updated_at"]),
+            modalities=json.loads(row["modalities_json"] or "[]"),
+            sources=json.loads(row["sources_json"] or "[]"),
+            sample_ids=json.loads(row["sample_ids_json"] or "[]"),
+            summary=row["summary"],
+            centroid_embedding=embedding,
+            observation_count=int(row["observation_count"]),
+            confidence=float(row["confidence"]),
+            features=json.loads(row["features_json"] or "{}"),
+            payload=json.loads(row["payload_json"] or "{}"),
             similarity=similarity,
         )
 

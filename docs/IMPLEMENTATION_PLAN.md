@@ -57,6 +57,9 @@ evaluation, UI, packaging, and stretch research, see
 - First Phase 6 neuro-symbolic memory in `sdnc/agent/rules.py`: rules with
   provenance/counterexamples/confidence, contradiction weakening, tool-routing
   hints, CLI `/rules`, and API `/api/rules/consolidate`.
+- First Phase 5 sensory prototypes in `sdnc/agent/sensory_prototypes.py`:
+  repeated multimodal events get compact prototype identity, observation count,
+  confidence, metadata exposure, and `/api/recent` visibility.
 - Archived the original Phase 1 spec in `docs/SDNC_PHASE1_SPEC.md`.
 
 ## Near-Term Hardening
@@ -98,7 +101,8 @@ evaluation, UI, packaging, and stretch research, see
    - frozen Whisper/audio embedding -> autonomous interaction vector;
    - video keyframe/audio temporal summaries;
    - optional local file ingestion from browser/API paths;
-   - no backprop through CLIP.
+   - no backprop through CLIP;
+   - richer web inspection for sensory prototypes.
 8. Add salience replay:
    - add scheduled/idle triggering around the manual sleep endpoint;
    - expose richer sleep controls in the web UI;

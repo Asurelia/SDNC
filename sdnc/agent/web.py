@@ -57,6 +57,10 @@ def build_handler(app: SDNCWebApp):
                     _sensory_binding_payload(binding)
                     for binding in app.system.recent_sensory_bindings(limit=12)
                 ]
+                sensory_prototypes = [
+                    _sensory_prototype_payload(prototype)
+                    for prototype in app.system.recent_sensory_prototypes(limit=12)
+                ]
                 cognitive = [
                     _cognitive_trace_payload(trace)
                     for trace in app.system.recent_cognitive_traces(limit=12)
@@ -65,6 +69,7 @@ def build_handler(app: SDNCWebApp):
                     {
                         "memories": memories,
                         "sensory_bindings": sensory,
+                        "sensory_prototypes": sensory_prototypes,
                         "cognitive_traces": cognitive,
                     }
                 )
@@ -280,6 +285,7 @@ def build_handler(app: SDNCWebApp):
                 ),
                 "expert_summary": app.system.expert_manager.summary(),
                 "rule_summary": app.system.rule_summary(),
+                "sensory_prototype_summary": app.system.sensory_prototype_summary(),
                 "file_queue": app.system.training_file_summary(),
                 "cognitive_core": {
                     "workspace_slots": config.cognitive_workspace_slots,
@@ -424,6 +430,21 @@ def _sensory_binding_payload(binding) -> dict[str, Any]:
         "binding_score": binding.binding_score,
         "salience": binding.salience,
         "similarity": binding.similarity,
+    }
+
+
+def _sensory_prototype_payload(prototype) -> dict[str, Any]:
+    return {
+        "id": prototype.id,
+        "key": prototype.key,
+        "updated_at": prototype.updated_at,
+        "modalities": prototype.modalities,
+        "sources": prototype.sources,
+        "sample_ids": prototype.sample_ids,
+        "summary": prototype.summary,
+        "observation_count": prototype.observation_count,
+        "confidence": prototype.confidence,
+        "similarity": prototype.similarity,
     }
 
 

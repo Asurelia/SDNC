@@ -78,6 +78,12 @@ class AutonomousConfig:
     rule_counterexample_penalty: float = 0.14
     rule_success_boost: float = 0.08
 
+    # Sensory prototypes compact repeated multimodal events into reusable
+    # identity-like anchors without storing raw media in hot context.
+    sensory_prototype_min_reliability: float = 0.45
+    sensory_prototype_similarity: float = 0.72
+    sensory_prototype_top_k: int = 5
+
     # Self-directed learning. External advisors are disabled unless explicitly
     # configured; sources provide hypotheses, never direct truth.
     lack_novelty_threshold: float = 0.55

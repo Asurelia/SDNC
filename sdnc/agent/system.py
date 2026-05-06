@@ -32,6 +32,7 @@ from sdnc.agent.planner import ActionPlan, ActionPlanner
 from sdnc.agent.plasticity import LocalCircuitLearner
 from sdnc.agent.replay import SleepConsolidationCycle, SleepReport
 from sdnc.agent.rules import RuleConsolidationReport, RuleEngine, RuleMatch
+from sdnc.agent.sensory_prototypes import SensoryPrototypeLearner, SensoryPrototypeMatch
 from sdnc.agent.self_improvement import ImprovementReport, SelfImprovementCycle
 from sdnc.agent.sync import ConvexEventMirror, NullEventMirror, SafeEventMirror
 from sdnc.agent.tools import (
@@ -92,6 +93,7 @@ class InteractionLearningSystem:
         self.multimodal_encoder = LocalMultimodalEncoder(self.config.input_dim)
         self.perception = PerceptionBus(self.multimodal_encoder, self.encoder)
         self.memory = PersistentMemory(self.config.memory_path, self.config.input_dim)
+        self.sensory_prototypes = SensoryPrototypeLearner(self.config, self.memory)
         self.expert_manager = ExpertManager(self.config, self.memory)
         self.learner = LocalCircuitLearner(self.config)
         self.learner.load(self.config.state_path)
@@ -326,6 +328,7 @@ class InteractionLearningSystem:
         """
         base_context = dict(context or {})
         event = self.perception.observe(samples, context=base_context)
+        prototype_matches = self.sensory_prototypes.match(event)
         budget = self.budget_manager.choose(event.summary, explicit_mode=str(base_context.get("mode", "")))
         resource_snapshot = self.budget_manager.snapshot(budget)
         expert_report = self.expert_manager.select_for_interaction(event.embedding, budget)
@@ -338,6 +341,7 @@ class InteractionLearningSystem:
                 "binding_score": event.binding_score,
                 "reliability": event.reliability,
                 "signal_count": len(event.signals),
+                "prototype_matches": [match.to_payload() for match in prototype_matches],
             },
         }
         activation = self.learner.activate(event.embedding)
@@ -419,6 +423,7 @@ class InteractionLearningSystem:
                     successful_tools={result.tool_name for result in tool_results if result.success},
                     episode_id=episode_id,
                 )
+            learned_prototype = self.sensory_prototypes.learn(event, episode_id, prototype_matches)
             self.memory.store_sensory_binding(
                 event_id=event.id,
                 episode_id=episode_id,
@@ -437,6 +442,7 @@ class InteractionLearningSystem:
             self.learner.save(self.config.state_path)
         else:
             improvement_report = None
+            learned_prototype = None
 
         result = InteractionResult(
             episode_id=episode_id,
@@ -458,6 +464,7 @@ class InteractionLearningSystem:
                 "sample_id": event.sample_ids[0] if event.sample_ids else None,
                 "features": event.signals[0].features if len(event.signals) == 1 else _sensory_features_payload(event),
                 "sensory_event": _sensory_event_payload(event, sensory_memories),
+                "sensory_prototypes": _sensory_prototypes_payload(prototype_matches, learned_prototype),
                 "cognitive_budget": _budget_payload(budget),
                 "resource_budget": _resource_payload(resource_snapshot),
                 "expert_lifecycle": _expert_report_payload(expert_report),
@@ -491,6 +498,8 @@ class InteractionLearningSystem:
                 "hot_vram_gb": resource_snapshot.hot_vram_gb,
                 "hot_experts": [expert.name for expert in expert_report.selected_hot],
                 "rules": [match.rule.name for match in rule_matches],
+                "sensory_prototypes": [match.prototype.key for match in prototype_matches],
+                "learned_sensory_prototype": learned_prototype.key if learned_prototype else "",
                 "cognitive_trace_id": workspace.id,
                 "uncertainty": workspace.uncertainty,
                 "surprise": workspace.surprise,
@@ -543,6 +552,9 @@ class InteractionLearningSystem:
 
     def recent_sensory_bindings(self, limit: int = 10):
         return self.memory.recent_sensory_bindings(limit)
+
+    def recent_sensory_prototypes(self, limit: int = 10):
+        return self.memory.recent_sensory_prototypes(limit)
 
     def recent_cognitive_traces(self, limit: int = 10):
         return self.memory.recent_cognitive_traces(limit)
@@ -800,6 +812,31 @@ class InteractionLearningSystem:
                     "counterexample_count": len(rule.counterexamples),
                 }
                 for rule in rules[:8]
+            ],
+        }
+
+    def sensory_prototype_summary(self) -> dict[str, Any]:
+        prototypes = self.memory.recent_sensory_prototypes(limit=200)
+        by_modality: dict[str, int] = {}
+        for prototype in prototypes:
+            key = "+".join(prototype.modalities) or "unknown"
+            by_modality[key] = by_modality.get(key, 0) + 1
+        return {
+            "total": len(prototypes),
+            "by_modality": by_modality,
+            "top": [
+                {
+                    "key": prototype.key,
+                    "modalities": prototype.modalities,
+                    "observation_count": prototype.observation_count,
+                    "confidence": prototype.confidence,
+                    "sources": prototype.sources[:4],
+                }
+                for prototype in sorted(
+                    prototypes,
+                    key=lambda item: (item.observation_count, item.confidence),
+                    reverse=True,
+                )[:8]
             ],
         }
 
@@ -1169,6 +1206,26 @@ def _sensory_event_payload(event: SensoryEvent, sensory_memories) -> dict[str, A
             }
             for binding in sensory_memories
         ],
+    }
+
+
+def _sensory_prototypes_payload(
+    matches: list[SensoryPrototypeMatch],
+    learned_prototype,
+) -> dict[str, Any]:
+    return {
+        "matches": [match.to_payload() for match in matches],
+        "learned": (
+            {
+                "id": learned_prototype.id,
+                "key": learned_prototype.key,
+                "modalities": learned_prototype.modalities,
+                "observation_count": learned_prototype.observation_count,
+                "confidence": learned_prototype.confidence,
+            }
+            if learned_prototype
+            else None
+        ),
     }
 
 

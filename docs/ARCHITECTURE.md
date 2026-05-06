@@ -55,6 +55,10 @@ does not replace the specialized circuits.
   replays useful episodes with low-strength local plasticity, rejects negative
   feedback, detects excessive circuit drift, and strengthens repeated
   tool-success procedures.
+- `SensoryPrototypeLearner`: compacts repeated text/image/audio/video events
+  into reusable sensory prototypes. Prototype matches are reported during
+  observation and help SDNC recognize recurring multimodal situations without
+  loading raw media into hot context.
 - `RuleEngine`: extracts provenance-backed neuro-symbolic rules from repeated
   verified traces. Rules hold trigger patterns, preconditions, action/tool,
   expected outcome, confidence, provenance, and counterexamples; they can
@@ -241,6 +245,18 @@ text/image/audio/video sample(s)
 - fused embedding and binding score;
 - per-signal features/reliability;
 - salience and optional linked episode id.
+
+`sensory_prototypes` stores repeated event identity:
+
+- modality set, sources, and sample ids;
+- centroid embedding;
+- observation count and confidence;
+- compact reliability/binding features;
+- payload pointing to the most recent event and episode.
+
+The second time SDNC observes a similar multimodal event, the prototype match is
+reported in `metadata.sensory_prototypes.matches`; after learning, the updated
+prototype is reported in `metadata.sensory_prototypes.learned`.
 
 Datasets are not copied into dense weights. They are streamed as experiences:
 

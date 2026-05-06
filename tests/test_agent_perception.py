@@ -63,3 +63,45 @@ def test_system_observe_persists_sensory_binding(tmp_path):
         assert any(event.event_type == "observation" for event in events)
     finally:
         system.close()
+
+
+def test_repeated_multimodal_observation_updates_sensory_prototype(tmp_path):
+    config = AutonomousConfig(
+        input_dim=32,
+        n_circuits=20,
+        memory_path=tmp_path / "memory.sqlite3",
+        state_path=tmp_path / "state.npz",
+        workspace_root=tmp_path,
+        allow_web=False,
+        sensory_prototype_similarity=0.6,
+    )
+    system = InteractionLearningSystem(config)
+    try:
+        image = np.zeros((5, 5, 3), dtype=np.uint8)
+        image[:, :, 1] = 255
+        first = system.observe(
+            [
+                ModalitySample("text", text="bouton vert confirme", label="ui", source="fixture", sample_id="s1"),
+                ModalitySample("image", content=image, text="bouton vert", label="ui", source="fixture", sample_id="s1"),
+            ],
+            learn=True,
+        )
+        second = system.observe(
+            [
+                ModalitySample("text", text="bouton vert confirme", label="ui", source="fixture", sample_id="s2"),
+                ModalitySample("image", content=image, text="bouton vert", label="ui", source="fixture", sample_id="s2"),
+            ],
+            learn=True,
+        )
+        prototypes = system.recent_sensory_prototypes(limit=5)
+        events = system.recent_events(limit=5)
+
+        assert first.metadata["sensory_prototypes"]["learned"]["observation_count"] == 1
+        assert second.metadata["sensory_prototypes"]["matches"]
+        assert prototypes[0].key.startswith("text+image:")
+        assert prototypes[0].observation_count == 2
+        assert prototypes[0].modalities == ["text", "image"]
+        assert set(prototypes[0].sample_ids) == {"s1", "s2"}
+        assert any(event.event_type == "observation" and event.payload["learned_sensory_prototype"] for event in events)
+    finally:
+        system.close()

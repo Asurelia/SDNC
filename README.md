@@ -39,6 +39,8 @@ L'agent actuel sait:
 - recevoir du feedback et modifier seulement les circuits actifs;
 - ingerer des observations texte, image, audio et video sous forme de signaux
   sensoriels compacts;
+- consolider des prototypes sensoriels pour reconnaitre des evenements
+  multimodaux repetes sans garder le media brut en contexte chaud;
 - gerer une file locale de fichiers d'entrainement depuis l'interface web;
 - creer, tester, promouvoir, refroidir ou rejeter des experts avec payloads
   compresses, checksums et decode `L0/L1/L2`;
@@ -137,6 +139,7 @@ Observation
   -> PersistentMemory
   -> SleepConsolidationCycle
   -> RuleEngine
+  -> SensoryPrototypeLearner
   -> feedback / self-improvement
 ```
 

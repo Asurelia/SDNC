@@ -323,6 +323,25 @@ Tasks:
 - Add memory browser for sensory bindings and linked episodes.
 - Add dataset ingestion presets for text, image, audio, video, and mixed rows.
 
+Implemented first slice, 2026-05-06:
+
+- `sdnc/agent/sensory_prototypes.py` adds compact prototypes for repeated
+  multimodal event identity.
+- SQLite now has `sensory_prototypes` with modalities, sources, sample ids,
+  centroid embedding, observation count, confidence, compact features, and
+  payload.
+- `InteractionLearningSystem.observe` reports prototype matches and learned
+  prototype updates in metadata and observation events.
+- `GET /api/recent` returns recent sensory prototypes, and status exposes
+  `sensory_prototype_summary`.
+
+Still open:
+
+- Optional frozen image/audio/video encoders behind feature flags.
+- OCR/transcription hooks as optional tools.
+- Rich browser UI for sensory prototype inspection.
+- Dataset ingestion presets by modality and mixed rows.
+
 Acceptance criteria:
 
 - Text-only mode still works without downloaded models.

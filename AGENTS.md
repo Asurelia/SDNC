@@ -30,6 +30,7 @@ and feedback-driven plasticity.
 - `sdnc/agent/learning.py` - lacune detection, source hypotheses, consensus, local verification.
 - `sdnc/agent/multimodal.py` - local signatures for text/image/audio/video observations.
 - `sdnc/agent/perception.py` - sensory signal binding into sparse multimodal events.
+- `sdnc/agent/sensory_prototypes.py` - compact prototypes for repeated multimodal event identity.
 - `sdnc/agent/planner.py` - active-inference-style action planner for answer/tool/feedback/gap choices.
 - `sdnc/agent/replay.py` - bounded sleep/replay consolidation for salient episodes and repeated tool successes.
 - `sdnc/agent/rules.py` - neuro-symbolic rules with provenance, counterexamples, confidence, and tool-routing hints.
@@ -65,6 +66,7 @@ and feedback-driven plasticity.
 - **ALWAYS** persist learned interaction state through `AutonomousConfig.memory_path` and `state_path`.
 - **ALWAYS** keep interaction, feedback, and improvement events append-only through `sync_events` when changing web/runtime behavior.
 - **ALWAYS** persist multimodal observations in `sensory_bindings` when changing perception/runtime behavior.
+- **ALWAYS** keep repeated multimodal identity in `sensory_prototypes`; do not rely on raw media or prompt text as the only recall path.
 - **ALWAYS** use `training_files` plus `sync_events` for dashboard file ingestion and processing state.
 - **ALWAYS** record lacunes in `learning_gaps` and update `source_stats` when adding source-backed learning behavior.
 - **ALWAYS** update `docs/EFFICIENCY_STRATEGY.md` when changing budget, context compression, or expert residency behavior.

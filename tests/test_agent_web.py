@@ -28,6 +28,7 @@ def test_web_api_status_and_interact(tmp_path):
         assert "calculator" in status["tools"]
         assert status["expert_summary"]["total"] == 0
         assert status["rule_summary"]["total"] == 0
+        assert status["sensory_prototype_summary"]["total"] == 0
 
         result = _post_json(f"{base}/api/interact", {"text": "calcule 6 + 7", "mode": "think"})
         assert result["result"]["activation"]["active_count"] <= 1
@@ -95,6 +96,7 @@ def test_web_api_status_and_interact(tmp_path):
 
         recent = _get_json(f"{base}/api/recent")
         assert any(binding["modalities"] == ["text", "image"] for binding in recent["sensory_bindings"])
+        assert recent["sensory_prototypes"]
         assert recent["cognitive_traces"]
         assert "attention" in recent["cognitive_traces"][0]
     finally:
