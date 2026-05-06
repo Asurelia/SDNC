@@ -3,6 +3,8 @@ const state = {
   files: [],
   lastEventId: 0,
   lastResult: null,
+  ruleLinks: [],
+  rules: [],
 };
 
 const modes = ["fast", "think", "max"];
@@ -30,6 +32,7 @@ const controls = {
   processBatchBtn: $("process-batch-btn"),
   processNextBtn: $("process-next-btn"),
   refreshBtn: $("refresh-btn"),
+  rulesConsolidateBtn: $("rules-consolidate-btn"),
   sendBtn: $("send-btn"),
   toolsToggle: $("tools-toggle"),
 };
@@ -100,6 +103,7 @@ controls.learnBtn.addEventListener("click", () => {
 });
 controls.processNextBtn.addEventListener("click", () => processNext(1));
 controls.processBatchBtn.addEventListener("click", () => processNext(Number(controls.batchSlider.value || 1)));
+controls.rulesConsolidateBtn.addEventListener("click", consolidateRules);
 controls.chooseFilesBtn.addEventListener("click", () => controls.fileInput.click());
 controls.fileInput.addEventListener("change", () => handleFiles([...controls.fileInput.files]));
 
@@ -145,6 +149,7 @@ async function handleFiles(files) {
       state.files = json.files || state.files;
       renderFiles(json.summary);
       renderStatus(json.status);
+      await refreshRules();
       addLog("fichier", `${file.name} ajouté`);
     }
     $("upload-state").textContent = "stocké";
@@ -217,6 +222,7 @@ async function postJson(path, payload, onSuccess) {
     if (!response.ok) throw new Error(json.error || response.statusText);
     onSuccess(json);
     await renderRecent();
+    await refreshRules();
   } catch (error) {
     addLog("erreur", error.message);
   } finally {
@@ -225,14 +231,21 @@ async function postJson(path, payload, onSuccess) {
 }
 
 async function refreshAll() {
-  const [status, files] = await Promise.all([
+  const [status, files, rules] = await Promise.all([
     fetchJson("/api/status"),
     fetchJson("/api/files"),
+    fetchJson("/api/rules"),
   ]);
   renderStatus(status);
   state.files = files.files || [];
   renderFiles(files.summary);
+  renderRules(rules);
   await renderRecent();
+}
+
+async function refreshRules() {
+  const data = await fetchJson("/api/rules");
+  renderRules(data);
 }
 
 async function renderRecent() {
@@ -264,6 +277,85 @@ function renderStatus(status) {
     : "--";
   renderSummary(status.file_queue || {});
   $("tool-list").replaceChildren(...(status.tools || []).map((name) => chip(name)));
+}
+
+function renderRules(data) {
+  state.rules = data.rules || [];
+  state.ruleLinks = data.links || [];
+  const list = $("rule-list");
+  if (!state.rules.length) {
+    list.innerHTML = '<span class="empty">aucune règle</span>';
+  } else {
+    list.replaceChildren(...state.rules.slice(0, 10).map(renderRuleCard));
+  }
+
+  const links = $("rule-link-list");
+  if (!state.ruleLinks.length) {
+    links.innerHTML = '<span class="empty">aucun lien</span>';
+    return;
+  }
+  links.replaceChildren(...state.ruleLinks.slice(0, 8).map((link) => {
+    const el = document.createElement("article");
+    el.className = "rule-link";
+    const label = link.payload?.target_name || link.payload?.prototype_key || link.target_id;
+    el.innerHTML = `<strong>${escapeHtml(link.target_kind)} · ${escapeHtml(label)}</strong><p>${escapeHtml(link.relation)} · ${fmt(link.confidence)} · ${link.provenance.length} preuves</p>`;
+    return el;
+  }));
+}
+
+function renderRuleCard(rule) {
+  const el = document.createElement("article");
+  el.className = `rule-card ${rule.status !== "enabled" ? "muted-card" : ""}`;
+  const evidence = `${rule.provenance.length}/${rule.counterexamples.length}`;
+  const actions = document.createElement("div");
+  actions.className = "rule-actions";
+  actions.append(button("+", () => giveRuleFeedback(rule.id, 1), "mini"));
+  actions.append(button("-", () => giveRuleFeedback(rule.id, -1), "mini ghost"));
+  if (rule.status === "enabled") {
+    actions.append(button("Désactiver", () => setRuleStatus(rule.id, "disabled"), "mini ghost"));
+  } else {
+    actions.append(button("Activer", () => setRuleStatus(rule.id, "enabled"), "mini ghost"));
+  }
+  actions.append(button("Rejeter", () => setRuleStatus(rule.id, "rejected"), "mini ghost"));
+
+  const body = document.createElement("div");
+  body.className = "rule-body";
+  body.innerHTML = `
+    <div class="rule-head">
+      <strong>${escapeHtml(rule.name)}</strong>
+      <span>${escapeHtml(rule.status)}</span>
+    </div>
+    <p>${escapeHtml(rule.trigger_pattern)} → ${escapeHtml(rule.action_tool)}</p>
+    <div class="rule-meta">conf ${fmt(rule.confidence)} · preuves ${evidence}</div>
+  `;
+  el.append(body, actions);
+  return el;
+}
+
+async function consolidateRules() {
+  if (state.busy) return;
+  await postJson("/api/rules/consolidate", {}, (payload) => {
+    addLog("règles", payload.report.summary);
+    renderStatus(payload.status);
+  });
+}
+
+async function setRuleStatus(ruleId, status) {
+  if (state.busy) return;
+  await postJson("/api/rules/status", { rule_id: ruleId, status, reason: "web-ui" }, (payload) => {
+    renderRules({ rules: payload.rules, links: payload.links });
+    renderStatus(payload.status);
+    addLog("règles", `${status} · ${payload.rule.name}`);
+  });
+}
+
+async function giveRuleFeedback(ruleId, score) {
+  if (state.busy) return;
+  await postJson("/api/rules/feedback", { rule_id: ruleId, score, note: "web-ui" }, (payload) => {
+    renderRules({ rules: payload.rules, links: payload.links });
+    renderStatus(payload.status);
+    addLog("règles", `${score > 0 ? "renforcée" : "affaiblie"} · ${payload.rule.name}`);
+  });
 }
 
 function renderFiles(summary = null) {
@@ -455,6 +547,9 @@ function handleEvent(event) {
     addLog("amélioration", payload.payload.summary || "cycle terminé");
   } else if (payload.event_type === "learning") {
     addLog("lacune", payload.payload.summary || "apprentissage terminé");
+  } else if (payload.event_type === "rules") {
+    addLog("règles", payload.payload.summary || payload.payload.action || "mise à jour");
+    refreshRules().catch(() => {});
   }
   renderRecent().catch(() => {});
 }
@@ -474,6 +569,7 @@ function connectEventStream() {
   source.addEventListener("feedback", handleEvent);
   source.addEventListener("improvement", handleEvent);
   source.addEventListener("learning", handleEvent);
+  source.addEventListener("rules", handleEvent);
   source.onerror = () => {
     source.close();
     window.setTimeout(connectEventStream, 1800);
@@ -489,6 +585,7 @@ function setBusy(value) {
     controls.processBatchBtn,
     controls.processNextBtn,
     controls.refreshBtn,
+    controls.rulesConsolidateBtn,
     controls.sendBtn,
   ]) {
     element.disabled = value;

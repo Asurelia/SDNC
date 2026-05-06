@@ -28,7 +28,36 @@ def test_web_api_status_and_interact(tmp_path):
         assert "calculator" in status["tools"]
         assert status["expert_summary"]["total"] == 0
         assert status["rule_summary"]["total"] == 0
+        assert status["rule_link_summary"]["total"] == 0
         assert status["sensory_prototype_summary"]["total"] == 0
+
+        seed_embedding = app.system.encoder.encode("web rule inspection")
+        rule_id = app.system.memory.upsert_rule(
+            name="rule:memory_recall:web-inspection",
+            trigger_pattern="web-inspection",
+            preconditions={"topic": "web-inspection"},
+            action_tool="memory_recall",
+            expected_outcome="memory_recall should help inspect web rules",
+            trigger_embedding=seed_embedding,
+            confidence=0.74,
+            provenance=["seed-web"],
+        )
+        rule_page = _get_json(f"{base}/api/rules")
+        assert rule_page["rules"][0]["id"] == rule_id
+
+        disabled = _post_json(
+            f"{base}/api/rules/status",
+            {"rule_id": rule_id, "status": "disabled", "reason": "test"},
+        )
+        assert disabled["rule"]["status"] == "disabled"
+        assert disabled["status"]["rule_summary"]["by_status"]["disabled"] == 1
+
+        feedback = _post_json(
+            f"{base}/api/rules/feedback",
+            {"rule_id": rule_id, "score": -1, "note": "test counterexample"},
+        )
+        assert feedback["rule"]["confidence"] < 0.74
+        assert len(feedback["rule"]["counterexamples"]) == 1
 
         result = _post_json(f"{base}/api/interact", {"text": "calcule 6 + 7", "mode": "think"})
         assert result["result"]["activation"]["active_count"] <= 1

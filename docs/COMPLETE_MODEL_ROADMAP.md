@@ -403,9 +403,18 @@ Implemented second slice, 2026-05-06:
 - Interaction/observation metadata reports `rule_attachments`, and web status
   exposes `rule_link_summary`.
 
+Implemented third slice, 2026-05-06:
+
+- API `GET /api/rules` returns rules, rule links, and summaries for inspection.
+- API `POST /api/rules/status` supports manual `enabled`, `disabled`, and
+  `rejected` states with append-only rule events.
+- API `POST /api/rules/feedback` records manual positive or counterexample
+  evidence through the same provenance-backed rule confidence path.
+- The local web cockpit now has a rules panel with rule/link inspection,
+  consolidation, confidence feedback, enable/disable, and reject controls.
+
 Still open:
 
-- Add disable/enable/manual feedback controls in the web UI.
 - Add memory compaction that preserves rule provenance and rejection evidence.
 - Add richer contradiction forking when two useful but incompatible rules exist.
 

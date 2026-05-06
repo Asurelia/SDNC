@@ -512,7 +512,9 @@ h3 {
 
 .trace-list,
 .memory-list,
-.log-list {
+.log-list,
+.rule-list,
+.rule-link-list {
   display: grid;
   gap: 8px;
   max-height: 260px;
@@ -521,8 +523,79 @@ h3 {
 
 .log-row,
 .trace,
-.memory {
+.memory,
+.rule-card,
+.rule-link {
   padding: 9px;
+}
+
+.rule-list {
+  max-height: 360px;
+}
+
+.rule-link-list {
+  max-height: 180px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.rule-card,
+.rule-link {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(238, 243, 239, 0.045);
+}
+
+.rule-card {
+  display: grid;
+  gap: 8px;
+}
+
+.rule-head {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: start;
+}
+
+.rule-head strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--cyan);
+  font-size: 12px;
+}
+
+.rule-head span,
+.rule-meta {
+  color: var(--faint);
+  font-size: 11px;
+}
+
+.rule-body p,
+.rule-link p {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.rule-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.rule-link strong {
+  display: block;
+  color: var(--lime);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.muted-card {
+  opacity: 0.7;
 }
 
 .log-row {

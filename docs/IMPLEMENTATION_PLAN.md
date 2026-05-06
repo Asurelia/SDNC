@@ -62,6 +62,9 @@ evaluation, UI, packaging, and stretch research, see
 - Phase 6 rule links: `rule_links` now attaches matched rules to hot experts
   and sensory prototypes with provenance, runtime attachment counts, and
   `rule_link_summary` in web status.
+- Phase 6 rule controls: API and web cockpit can list rules/links, consolidate,
+  enable/disable/reject rules, and add manual positive or counterexample
+  feedback while keeping provenance.
 - First Phase 5 sensory prototypes in `sdnc/agent/sensory_prototypes.py`:
   repeated multimodal events get compact prototype identity, observation count,
   confidence, metadata exposure, and `/api/recent` visibility.
@@ -98,7 +101,6 @@ evaluation, UI, packaging, and stretch research, see
    - rank future experiments by uncertainty and usefulness.
 6. Harden neuro-symbolic rules:
    - add richer inspection for rule-to-expert/prototype links;
-   - add disable/enable/manual feedback controls;
    - add provenance-preserving memory compaction;
    - add contradiction forking when two rules both have useful evidence.
 7. Upgrade sensory bridges:

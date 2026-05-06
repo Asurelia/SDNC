@@ -871,6 +871,72 @@ class InteractionLearningSystem:
             ],
         }
 
+    def rule_records(self):
+        return self.memory.list_rules()
+
+    def rule_link_records(self, limit: int = 100):
+        return self.memory.list_rule_links(limit=limit)
+
+    def set_rule_status(self, rule_id: str, status: str, reason: str = ""):
+        if status not in {"enabled", "disabled", "rejected"}:
+            raise ValueError(f"unsupported rule status: {status}")
+        rule = self.memory.set_rule_status(
+            rule_id,
+            status,
+            payload={
+                "last_manual_status": status,
+                "last_manual_status_reason": reason,
+                "last_manual_status_at": time(),
+            },
+        )
+        self._emit_event(
+            "rules",
+            {
+                "action": "status",
+                "rule_id": rule.id,
+                "rule_name": rule.name,
+                "status": rule.status,
+                "reason": reason,
+            },
+        )
+        return rule
+
+    def record_rule_feedback(self, rule_id: str, score: float, note: str = ""):
+        clipped = float(np.clip(score, -1.0, 1.0))
+        if clipped == 0.0:
+            raise ValueError("rule feedback score cannot be zero")
+        evidence_id = f"manual:{uuid.uuid4()}"
+        if clipped > 0:
+            confidence_delta = self.config.rule_success_boost * clipped
+            success = True
+            counterexample = False
+        else:
+            confidence_delta = self.config.rule_counterexample_penalty * clipped
+            success = False
+            counterexample = True
+        self.memory.record_rule_evidence(
+            rule_id,
+            success=success,
+            episode_id=evidence_id,
+            confidence_delta=confidence_delta,
+            counterexample=counterexample,
+        )
+        rule = self._rule_by_id(rule_id)
+        self._emit_event(
+            "rules",
+            {
+                "action": "feedback",
+                "rule_id": rule.id,
+                "rule_name": rule.name,
+                "score": clipped,
+                "note": note,
+                "confidence": rule.confidence,
+                "status": rule.status,
+                "evidence_id": evidence_id,
+            },
+        )
+        return rule
+
     def sensory_prototype_summary(self) -> dict[str, Any]:
         prototypes = self.memory.recent_sensory_prototypes(limit=200)
         by_modality: dict[str, int] = {}
@@ -931,6 +997,12 @@ class InteractionLearningSystem:
 
     def recent_events(self, limit: int = 50, after_id: int | None = None):
         return self.memory.recent_events(limit=limit, after_id=after_id)
+
+    def _rule_by_id(self, rule_id: str):
+        for rule in self.memory.list_rules():
+            if rule.id == rule_id:
+                return rule
+        raise KeyError(f"rule not found: {rule_id}")
 
     def _attach_rules_to_experts(
         self,

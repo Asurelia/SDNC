@@ -559,6 +559,36 @@ class PersistentMemory:
                 ).fetchall()
         return [self._row_to_rule(row, self._unpack_vector(row["trigger_embedding"]), 0.0) for row in rows]
 
+    def set_rule_status(
+        self,
+        rule_id: str,
+        status: str,
+        payload: dict[str, Any] | None = None,
+    ) -> RuleRecord:
+        now = time()
+        payload = payload or {}
+        with self._lock:
+            row = self.conn.execute("SELECT * FROM rules WHERE id = ?", (rule_id,)).fetchone()
+            if row is None:
+                raise KeyError(f"rule not found: {rule_id}")
+            old_payload = json.loads(row["payload_json"] or "{}")
+            self.conn.execute(
+                """
+                UPDATE rules
+                SET status = ?, updated_at = ?, payload_json = ?
+                WHERE id = ?
+                """,
+                (
+                    status,
+                    now,
+                    json.dumps({**old_payload, **payload}, sort_keys=True, default=str),
+                    rule_id,
+                ),
+            )
+            self.conn.commit()
+            updated = self.conn.execute("SELECT * FROM rules WHERE id = ?", (rule_id,)).fetchone()
+        return self._row_to_rule(updated, self._unpack_vector(updated["trigger_embedding"]), 0.0)
+
     def upsert_rule_link(
         self,
         rule_id: str,

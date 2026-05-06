@@ -210,6 +210,10 @@ small payload such as expert name or prototype key. Runtime metadata reports
 attachment counts in `metadata.rule_attachments`, and web status exposes
 `rule_link_summary` so the user can inspect which learned hints shaped the
 current organization layer.
+Rules are also controllable through the local API/UI: the user can consolidate,
+enable, disable, reject, or add positive/counterexample feedback. These manual
+actions append `rules` events and update rule confidence/status; they do not
+erase provenance or counterexample history.
 
 ## Self-Directed Learning
 

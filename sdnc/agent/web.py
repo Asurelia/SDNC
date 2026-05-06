@@ -84,6 +84,15 @@ def build_handler(app: SDNCWebApp):
             elif parsed.path == "/api/files":
                 files = [_training_file_payload(record) for record in app.system.list_training_files()]
                 self._send_json({"files": files, "summary": app.system.training_file_summary()})
+            elif parsed.path == "/api/rules":
+                self._send_json(
+                    {
+                        "rules": [_rule_payload(rule) for rule in app.system.rule_records()],
+                        "links": [_rule_link_payload(link) for link in app.system.rule_link_records(limit=120)],
+                        "summary": app.system.rule_summary(),
+                        "link_summary": app.system.rule_link_summary(),
+                    }
+                )
             elif parsed.path == "/api/stream":
                 query = parse_qs(parsed.query)
                 after = int(query["after"][0]) if "after" in query else None
@@ -224,6 +233,48 @@ def build_handler(app: SDNCWebApp):
             elif parsed.path == "/api/rules/consolidate":
                 report = app.system.run_rule_consolidation()
                 self._send_json({"report": report.to_payload(), "status": self._status_payload()})
+            elif parsed.path == "/api/rules/status":
+                rule_id = str(payload.get("rule_id") or "")
+                new_status = str(payload.get("status") or "")
+                reason = str(payload.get("reason") or "")
+                if not rule_id or not new_status:
+                    self._send_json({"error": "rule_id and status are required"}, status=HTTPStatus.BAD_REQUEST)
+                    return
+                try:
+                    rule = app.system.set_rule_status(rule_id, new_status, reason=reason)
+                except (KeyError, ValueError) as exc:
+                    self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                    return
+                self._send_json(
+                    {
+                        "rule": _rule_payload(rule),
+                        "rules": [_rule_payload(item) for item in app.system.rule_records()],
+                        "links": [_rule_link_payload(link) for link in app.system.rule_link_records(limit=120)],
+                        "status": self._status_payload(),
+                    }
+                )
+            elif parsed.path == "/api/rules/feedback":
+                rule_id = str(payload.get("rule_id") or "")
+                if not rule_id:
+                    self._send_json({"error": "rule_id is required"}, status=HTTPStatus.BAD_REQUEST)
+                    return
+                try:
+                    rule = app.system.record_rule_feedback(
+                        rule_id,
+                        score=float(payload.get("score", 0.0)),
+                        note=str(payload.get("note") or ""),
+                    )
+                except (KeyError, ValueError) as exc:
+                    self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                    return
+                self._send_json(
+                    {
+                        "rule": _rule_payload(rule),
+                        "rules": [_rule_payload(item) for item in app.system.rule_records()],
+                        "links": [_rule_link_payload(link) for link in app.system.rule_link_records(limit=120)],
+                        "status": self._status_payload(),
+                    }
+                )
             elif parsed.path == "/api/learn-gap":
                 report = app.system.learn_from_last_gap()
                 self._send_json({"report": _learning_report_payload(report), "status": self._status_payload()})
@@ -446,6 +497,37 @@ def _sensory_prototype_payload(prototype) -> dict[str, Any]:
         "observation_count": prototype.observation_count,
         "confidence": prototype.confidence,
         "similarity": prototype.similarity,
+    }
+
+
+def _rule_payload(rule) -> dict[str, Any]:
+    return {
+        "id": rule.id,
+        "name": rule.name,
+        "trigger_pattern": rule.trigger_pattern,
+        "action_tool": rule.action_tool,
+        "expected_outcome": rule.expected_outcome,
+        "confidence": rule.confidence,
+        "status": rule.status,
+        "provenance": rule.provenance,
+        "counterexamples": rule.counterexamples,
+        "payload": rule.payload,
+        "similarity": rule.similarity,
+    }
+
+
+def _rule_link_payload(link) -> dict[str, Any]:
+    return {
+        "id": link.id,
+        "timestamp": link.timestamp,
+        "updated_at": link.updated_at,
+        "rule_id": link.rule_id,
+        "target_kind": link.target_kind,
+        "target_id": link.target_id,
+        "relation": link.relation,
+        "confidence": link.confidence,
+        "provenance": link.provenance,
+        "payload": link.payload,
     }
 
 
