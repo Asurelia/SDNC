@@ -33,8 +33,9 @@ does not replace the specialized circuits.
 
 - `HashingExperienceEncoder`: deterministic text/context encoder. It is not a
   transformer and does not need downloaded weights.
-- `BudgetManager`: chooses `fast`, `think`, or `max` cognitive budgets and
-  estimates hot VRAM/RAM pressure.
+- `BudgetManager`: chooses `fast`, `think`, `max`, or `open` cognitive modes.
+  `open` is the laboratory mode: it avoids tool truncation so failures and
+  loops can be observed before better constraints are learned.
 - `ContextLODCompressor`: replaces dense long-context handling with segment
   summaries, prototypes, and compact routing text.
 - `CognitiveCore` / `SparseGlobalWorkspace`: a bounded state coordinator that
@@ -45,6 +46,8 @@ does not replace the specialized circuits.
   `ask_feedback`, and `investigate_gap` with a practical expected-free-energy
   approximation. It does not execute hidden reasoning; it exposes the chosen
   action and rejected candidates in interaction metadata and cognitive traces.
+  In `open` mode, planner candidates remain visible but execution follows all
+  relevant local proposals so the experiment reveals true behavior.
 - `ExpertAtlas`: defines compressed expert payloads for `procedure`,
   `prototype`, `low_rank`, `sparse_delta`, and `codebook` experts. Each payload
   has L0/L1/L2 decode views, byte size, decode cost, hot RAM/VRAM hints, and a
@@ -130,6 +133,8 @@ The current runtime records:
 - `context_lod`: segment/prototype counts and estimated tokens saved;
 - `resource_budget`: estimated hot VRAM/RAM and whether it fits the configured
   hardware target.
+- `introspection`: active circuits, proposed/executed/skipped tools, memory
+  matches, hot experts, rules, planner candidates, and workspace trace.
 
 More detail lives in `docs/EFFICIENCY_STRATEGY.md`.
 

@@ -180,7 +180,7 @@ class InteractionLearningSystem:
             memory_count=len(memories),
             hot_expert_count=len(expert_report.selected_hot),
         )
-        planned_tool_names = self._tool_names_for_plan(tool_names, action_plan)
+        planned_tool_names = self._tool_names_for_plan(tool_names, action_plan, mode=budget.mode)
         tool_context = {
             **enriched_context,
             "embedding": embedding,
@@ -284,6 +284,18 @@ class InteractionLearningSystem:
                 "rule_attachments": {"expert_links": expert_rule_link_count},
                 "cognitive_core": _cognitive_workspace_payload(workspace),
                 "action_plan": action_plan.to_payload(),
+                "introspection": _introspection_payload(
+                    mode=budget.mode,
+                    activation=activation,
+                    memories=memories,
+                    proposed_tools=tool_names,
+                    executed_tools=planned_tool_names,
+                    tool_results=tool_results,
+                    expert_report=expert_report,
+                    rule_matches=rule_matches,
+                    workspace=workspace,
+                    action_plan=action_plan,
+                ),
             },
         )
         self._last_result = result
@@ -311,6 +323,7 @@ class InteractionLearningSystem:
                 "attention_focus": list(workspace.attention_focus),
                 "planner_action": action_plan.selected.action,
                 "planner_score": action_plan.selected.score,
+                "introspection": result.metadata["introspection"],
             },
         )
         return result
@@ -390,7 +403,7 @@ class InteractionLearningSystem:
             memory_count=len(memories),
             hot_expert_count=len(expert_report.selected_hot),
         )
-        planned_tool_names = self._tool_names_for_plan(tool_names, action_plan)
+        planned_tool_names = self._tool_names_for_plan(tool_names, action_plan, mode=budget.mode)
         tool_context = {
             **observation_context,
             "embedding": event.embedding,
@@ -506,6 +519,18 @@ class InteractionLearningSystem:
                 },
                 "cognitive_core": _cognitive_workspace_payload(workspace),
                 "action_plan": action_plan.to_payload(),
+                "introspection": _introspection_payload(
+                    mode=budget.mode,
+                    activation=activation,
+                    memories=memories,
+                    proposed_tools=tool_names,
+                    executed_tools=planned_tool_names,
+                    tool_results=tool_results,
+                    expert_report=expert_report,
+                    rule_matches=rule_matches,
+                    workspace=workspace,
+                    action_plan=action_plan,
+                ),
             },
         )
         self._last_result = result
@@ -543,6 +568,7 @@ class InteractionLearningSystem:
                 "attention_focus": list(workspace.attention_focus),
                 "planner_action": action_plan.selected.action,
                 "planner_score": action_plan.selected.score,
+                "introspection": result.metadata["introspection"],
             },
         )
         return result
@@ -1231,14 +1257,16 @@ class InteractionLearningSystem:
                 "aujourd",
             ]
         )
+
+        path_match = re.search(r"[A-Za-z0-9_./\\-]+\.[A-Za-z0-9_]+", text)
+        file_like = bool(path_match) or any(marker in lowered for marker in ["fichier", "code", ".py", ".md", "projet", "repo"])
+        if self.config.allow_file_tools and file_like:
+            if path_match:
+                selected.append("file_read")
+            selected.append("file_search")
+
         if self.config.allow_web and (question_like or activation_confidence < self.config.confidence_threshold):
             selected.append("web_search")
-
-        file_like = any(marker in lowered for marker in ["fichier", "code", ".py", ".md", "projet", "repo"])
-        if self.config.allow_file_tools and file_like:
-            selected.append("file_search")
-            if re.search(r"[A-Za-z0-9_./\\-]+\.[A-Za-z0-9_]+", text):
-                selected.append("file_read")
 
         if re.search(r"\d+\s*[-+*/%]\s*\d+", text):
             selected.append("calculator")
@@ -1254,7 +1282,9 @@ class InteractionLearningSystem:
         for name in selected:
             if name not in deduped and self.registry.get(name) is not None:
                 deduped.append(name)
-        return deduped[: (max_tool_calls or self.config.max_tool_calls)]
+        if max_tool_calls is None or max_tool_calls <= 0:
+            return deduped
+        return deduped[:max_tool_calls]
 
     def _run_tools(
         self,
@@ -1264,7 +1294,14 @@ class InteractionLearningSystem:
     ) -> list[ToolResult]:
         return [self.registry.run(name, text, context) for name in names]
 
-    def _tool_names_for_plan(self, proposed: list[str], action_plan: ActionPlan) -> list[str]:
+    def _tool_names_for_plan(
+        self,
+        proposed: list[str],
+        action_plan: ActionPlan,
+        mode: str | None = None,
+    ) -> list[str]:
+        if mode == "open":
+            return [name for name in proposed if self.registry.get(name) is not None]
         if action_plan.selected.action == "use_tools":
             selected = ["memory_recall", *action_plan.selected.tool_names]
         elif action_plan.selected.action == "recall_memory":
@@ -1559,6 +1596,99 @@ def _expert_payload_summary(payload: dict[str, Any]) -> dict[str, Any] | None:
         return payload_summary(raw_payload)
     except (KeyError, TypeError, ValueError):
         return {"integrity_ok": False, "error": "invalid expert payload"}
+
+
+def _introspection_payload(
+    *,
+    mode: str,
+    activation,
+    memories: list[MemoryRecord],
+    proposed_tools: list[str],
+    executed_tools: list[str],
+    tool_results: list[ToolResult],
+    expert_report,
+    rule_matches: list[RuleMatch],
+    workspace: CognitiveWorkspace,
+    action_plan: ActionPlan,
+) -> dict[str, Any]:
+    """Inspectable SDNC trace without relying on hidden chain-of-thought."""
+    executed = set(executed_tools)
+    successful = {result.tool_name for result in tool_results if result.success}
+    failed = {result.tool_name for result in tool_results if not result.success}
+    return {
+        "mode": mode,
+        "open_laboratory": mode == "open",
+        "policy": "observe_all_proposals" if mode == "open" else action_plan.policy,
+        "circuit_trace": [
+            {
+                "id": index,
+                "weight": round(float(weight), 6),
+                "score": round(float(score), 6),
+                "state": "active",
+            }
+            for index, weight, score in zip(activation.indices, activation.weights, activation.scores)
+        ],
+        "tool_trace": [
+            {
+                "name": name,
+                "proposed": True,
+                "executed": name in executed,
+                "success": name in successful,
+                "failed": name in failed,
+                "planner_selected": name in action_plan.selected.tool_names or name == "memory_recall",
+                "reason": _tool_trace_reason(name, workspace),
+            }
+            for name in proposed_tools
+        ],
+        "skipped_tools": [name for name in proposed_tools if name not in executed],
+        "memory_trace": [
+            {
+                "id": memory.id,
+                "similarity": round(float(memory.similarity), 4),
+                "salience": round(float(memory.salience), 4),
+                "feedback_score": memory.feedback_score,
+                "text": memory.text[:240],
+            }
+            for memory in memories[:20]
+        ],
+        "expert_trace": [
+            {
+                "id": expert.id,
+                "name": expert.name,
+                "kind": expert.kind,
+                "status": expert.status,
+                "utility": round(float(expert.utility), 4),
+                "similarity": round(float(expert.similarity), 4),
+                "hot": expert.hot,
+            }
+            for expert in expert_report.selected_hot
+        ],
+        "rule_trace": [
+            {
+                "rule_id": match.rule.id,
+                "name": match.rule.name,
+                "tool": match.tool_name,
+                "confidence": round(float(match.rule.confidence), 4),
+                "similarity": round(float(match.rule.similarity), 4),
+                "score": round(float(match.score), 4),
+            }
+            for match in rule_matches
+        ],
+        "planner_trace": {
+            "selected_action": action_plan.selected.action,
+            "selected_tools": list(action_plan.selected.tool_names),
+            "selected_score": round(float(action_plan.selected.score), 4),
+            "candidates": [candidate.to_payload() for candidate in action_plan.candidates],
+        },
+        "workspace_trace": workspace.to_payload(),
+    }
+
+
+def _tool_trace_reason(name: str, workspace: CognitiveWorkspace) -> str:
+    for slot in workspace.slots:
+        if slot.kind == "tool" and slot.key == name:
+            return str(slot.payload.get("reason") or slot.summary)
+    return "learned or inherited proposal"
 
 
 def _rule_matches_payload(matches: list[RuleMatch]) -> list[dict[str, Any]]:

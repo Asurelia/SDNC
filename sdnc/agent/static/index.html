@@ -44,6 +44,11 @@
           <strong id="mode-label">Rapide</strong>
         </label>
 
+        <label class="toggle open-toggle">
+          <input id="open-lab-toggle" type="checkbox" />
+          <span>Ouvert</span>
+        </label>
+
         <label class="range-control">
           <span>Lot</span>
           <input id="batch-slider" type="range" min="1" max="20" step="1" value="3" />
@@ -217,6 +222,14 @@
               <div><dt>Mode</dt><dd id="workspace-mode">--</dd></div>
             </dl>
             <div id="workspace-focus" class="trace-list"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-title">
+              <h2>Trace vivante</h2>
+              <span id="introspection-summary" class="pill">--</span>
+            </div>
+            <div id="introspection-list" class="trace-list tall-trace"></div>
           </section>
 
           <section class="panel">

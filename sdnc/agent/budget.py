@@ -12,7 +12,7 @@ from typing import Literal
 
 from sdnc.agent.config import AutonomousConfig
 
-CognitiveMode = Literal["fast", "think", "max"]
+CognitiveMode = Literal["fast", "think", "max", "open"]
 
 
 @dataclass(frozen=True)
@@ -21,7 +21,7 @@ class CognitiveBudget:
 
     mode: CognitiveMode
     memory_top_k: int
-    max_tool_calls: int
+    max_tool_calls: int | None
     max_context_segments: int
     max_context_chars: int
     allow_gap_learning: bool
@@ -67,6 +67,18 @@ class BudgetManager:
         explicit_mode: str | None = None,
     ) -> CognitiveBudget:
         mode = self._normalize_mode(explicit_mode) or self._infer_mode(text, confidence)
+        if mode == "open":
+            return CognitiveBudget(
+                mode="open",
+                memory_top_k=self.config.open_memory_top_k,
+                max_tool_calls=None,
+                max_context_segments=self.config.open_context_segments,
+                max_context_chars=self.config.open_context_chars,
+                allow_gap_learning=True,
+                allow_external_advisors=self.config.allow_external_advisors,
+                max_hot_experts=self.config.open_hot_experts,
+                notes=("open laboratory", "no tool truncation", "observe before constraining"),
+            )
         if mode == "fast":
             return CognitiveBudget(
                 mode="fast",
@@ -153,6 +165,8 @@ class BudgetManager:
 
     def _infer_mode(self, text: str, confidence: float | None) -> CognitiveMode:
         lowered = text.lower()
+        if any(marker in lowered for marker in ["open", "ouvert", "autonomie totale", "laboratoire ouvert"]):
+            return "open"
         if any(marker in lowered for marker in ["max", "profond", "recherche complète", "benchmark", "architecture"]):
             return "max"
         if any(marker in lowered for marker in ["pourquoi", "comment", "analyse", "plan", "debug", "erreur", "test"]):
@@ -165,6 +179,6 @@ class BudgetManager:
         if not mode:
             return None
         lowered = mode.lower().strip()
-        if lowered in {"fast", "think", "max"}:
+        if lowered in {"fast", "think", "max", "open"}:
             return lowered  # type: ignore[return-value]
         return None

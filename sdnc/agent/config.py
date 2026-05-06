@@ -113,6 +113,10 @@ class AutonomousConfig:
     max_context_chars: int = 16000
     max_memory_top_k: int = 12
     max_tool_calls_max_mode: int = 8
+    open_memory_top_k: int = 100
+    open_context_segments: int = 256
+    open_context_chars: int = 500_000
+    open_hot_experts: int = 512
     fast_hot_experts: int = 4
     think_hot_experts: int = 12
     max_hot_experts: int = 32
@@ -151,8 +155,8 @@ class AutonomousConfig:
             raise ValueError("max_active_ratio must stay <= 0.05 for SDNC sparsity")
         if self.n_circuits > self.max_circuits:
             raise ValueError("n_circuits cannot exceed max_circuits")
-        if self.default_cognitive_mode not in {"fast", "think", "max"}:
-            raise ValueError("default_cognitive_mode must be fast, think, or max")
+        if self.default_cognitive_mode not in {"fast", "think", "max", "open"}:
+            raise ValueError("default_cognitive_mode must be fast, think, max, or open")
 
     @property
     def max_active_circuits(self) -> int:

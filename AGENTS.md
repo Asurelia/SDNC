@@ -61,12 +61,14 @@ and feedback-driven plasticity.
 - **CRITICAL**: Keep sparse activation bounded to `max_active_ratio <= 0.05` unless a test explicitly covers a research exception.
 - **CRITICAL**: SQLite/local event log is the source of truth. Convex or any cloud sync is optional best-effort mirroring only.
 - **CRITICAL**: Prefer hot/cold budgets and context LOD over dense always-on context or experts.
+- **CRITICAL**: `open` mode is for laboratory observation: do not truncate tool proposals there; record what happens so better constraints can be learned from evidence.
 - **CRITICAL**: Multimodal input must flow through sensory signals, bindings, and memory; do not flatten everything into one giant prompt.
 - **CRITICAL**: Experts are not fixed assets; maintain lifecycle status, utility, hot/cold residency, and retirement evidence.
 - **NEVER** reintroduce `brain_hybrid`, `pipeline`, `teacher_wrapper`, `distillation_engine`, or Qwen wrapper code.
 - **NEVER** reset circuit state during a normal interaction; reset only for tests or explicit session boundaries.
 - **ALWAYS** persist learned interaction state through `AutonomousConfig.memory_path` and `state_path`.
 - **ALWAYS** keep interaction, feedback, and improvement events append-only through `sync_events` when changing web/runtime behavior.
+- **ALWAYS** expose inspectable SDNC introspection for runtime changes: active circuits, tool proposals/executions, memory hits, experts, rules, and planner candidates.
 - **ALWAYS** persist multimodal observations in `sensory_bindings` when changing perception/runtime behavior.
 - **ALWAYS** keep repeated multimodal identity in `sensory_prototypes`; do not rely on raw media or prompt text as the only recall path.
 - **ALWAYS** use `training_files` plus `sync_events` for dashboard file ingestion and processing state.

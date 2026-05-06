@@ -37,6 +37,8 @@ under `AutonomousConfig.file_queue_path` and indexed in SQLite.
 ## UI Controls
 
 - `Mode` slider maps to SDNC cognitive budgets: `fast`, `think`, `max`.
+- `Ouvert` switches to SDNC's laboratory mode: no tool truncation, large
+  recall/context windows, and full introspection of proposals and failures.
 - `Lot` slider controls batch size for `/api/files/process-next`.
 - `Apprendre` toggles local circuit/memory updates.
 - `Outils` permits normal SDNC tool selection during file processing.
@@ -48,6 +50,9 @@ under `AutonomousConfig.file_queue_path` and indexed in SQLite.
   local file lookup, sensory prototypes, rule consolidation, and replay. It
   shows score, pass/fail notes, per-step metrics, and can keep sleep replay in
   preview mode.
+- `Trace vivante` exposes inspectable SDNC state in realtime: active circuits,
+  proposed/executed/skipped tools, memory hits, experts, rules, and planner
+  candidates. It is telemetry, not an external LLM chain-of-thought.
 
 ## API
 

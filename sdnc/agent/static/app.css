@@ -176,7 +176,7 @@ h3 {
 
 .command-deck {
   display: grid;
-  grid-template-columns: repeat(4, minmax(72px, 0.6fr)) repeat(2, minmax(150px, 1fr)) repeat(2, auto) repeat(6, auto);
+  grid-template-columns: repeat(4, minmax(72px, 0.6fr)) minmax(150px, 1fr) auto minmax(150px, 1fr) repeat(2, auto) repeat(6, auto);
   gap: 10px;
   align-items: stretch;
   padding: 12px;
@@ -241,6 +241,11 @@ h3 {
   width: 18px;
   min-height: 18px;
   accent-color: var(--lime);
+}
+
+.open-toggle {
+  border-color: rgba(255, 186, 74, 0.42);
+  background: rgba(255, 186, 74, 0.10);
 }
 
 .secondary,
@@ -589,6 +594,10 @@ h3 {
   gap: 8px;
   max-height: 260px;
   overflow: auto;
+}
+
+.tall-trace {
+  max-height: 420px;
 }
 
 .log-row,

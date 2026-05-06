@@ -373,6 +373,14 @@ def build_handler(app: SDNCWebApp):
                 "max_active_circuits": config.max_active_circuits,
                 "sparsity_ratio": config.sparsity_ratio,
                 "default_cognitive_mode": config.default_cognitive_mode,
+                "open_laboratory": {
+                    "available": True,
+                    "memory_top_k": config.open_memory_top_k,
+                    "max_tool_calls": None,
+                    "context_segments": config.open_context_segments,
+                    "context_chars": config.open_context_chars,
+                    "hot_experts": config.open_hot_experts,
+                },
                 "resource_budget": _resource_snapshot_payload(
                     app.system.budget_manager.snapshot(
                         app.system.budget_manager.choose("", explicit_mode=config.default_cognitive_mode)

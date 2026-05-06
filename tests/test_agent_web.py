@@ -32,6 +32,8 @@ def test_web_api_status_and_interact(tmp_path):
         assert status["rule_conflict_summary"]["total"] == 0
         assert status["memory_compaction_summary"]["total"] == 0
         assert status["sensory_prototype_summary"]["total"] == 0
+        assert status["open_laboratory"]["available"] is True
+        assert status["open_laboratory"]["max_tool_calls"] is None
 
         curriculum = _get_json(f"{base}/api/curriculum")
         assert curriculum["steps"][0]["id"] == "calculator"
@@ -78,6 +80,7 @@ def test_web_api_status_and_interact(tmp_path):
         assert result["result"]["metadata"]["cognitive_budget"]["mode"] == "think"
         assert result["result"]["metadata"]["cognitive_core"]["prediction"]["predicted_action"] == "use_tools"
         assert result["result"]["metadata"]["action_plan"]["selected_action"] == "use_tools"
+        assert "introspection" in result["result"]["metadata"]
         assert "resource_budget" in result["status"]
         assert result["status"]["cognitive_core"]["workspace_slots"] == config.cognitive_workspace_slots
         assert result["status"]["modalities"] == ["audio", "image", "text", "video"]

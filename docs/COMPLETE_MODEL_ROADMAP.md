@@ -529,6 +529,16 @@ Implemented first slice, 2026-05-06:
 - Tests cover the curriculum manifest, core guided steps, sensory prototype
   learning, sparse activation limits, the web API, and event emission.
 
+Implemented second slice, 2026-05-06:
+
+- `open` laboratory mode runs without tool truncation so SDNC can reveal real
+  routing failures and loops before constraints are learned.
+- Interaction and observation metadata now include `introspection`: active
+  circuits, tool proposals/executions/skips, memory hits, hot experts, matched
+  rules, planner candidates, and workspace state.
+- The web cockpit adds an `Ouvert` switch and `Trace vivante` panel so runtime
+  behavior can be inspected in realtime.
+
 Tasks:
 
 - Add expert atlas view with hot/cold/filter/status controls.

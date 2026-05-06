@@ -37,6 +37,7 @@ const controls = {
   learnToggle: $("learn-toggle"),
   modeSlider: $("mode-slider"),
   observeBtn: $("observe-btn"),
+  openLabToggle: $("open-lab-toggle"),
   processBatchBtn: $("process-batch-btn"),
   processNextBtn: $("process-next-btn"),
   refreshBtn: $("refresh-btn"),
@@ -91,6 +92,7 @@ sensoryForm.addEventListener("submit", async (event) => {
 });
 
 controls.modeSlider.addEventListener("input", renderMode);
+controls.openLabToggle.addEventListener("change", renderMode);
 controls.batchSlider.addEventListener("input", () => {
   $("batch-label").textContent = controls.batchSlider.value;
 });
@@ -520,10 +522,68 @@ function renderResult(result) {
   renderCircuits(activation);
   renderTraces(result.tool_results || []);
   renderCognitivePanel(metadata.cognitive_core || null);
+  renderIntrospection(metadata.introspection || null);
   const sensory = metadata.sensory_event
     ? `${metadata.sensory_event.modalities.join("+")} bind ${fmt(metadata.sensory_event.binding_score)}`
     : "interaction";
   addLog("résultat", `${sensory} · conf ${fmt(activation.confidence)} · sal ${fmt(metadata.salience)}`);
+}
+
+function renderIntrospection(trace) {
+  if (!trace) {
+    $("introspection-summary").textContent = "--";
+    $("introspection-list").innerHTML = '<span class="empty">aucune trace</span>';
+    return;
+  }
+  const tools = trace.tool_trace || [];
+  const circuits = trace.circuit_trace || [];
+  const memories = trace.memory_trace || [];
+  const experts = trace.expert_trace || [];
+  const rules = trace.rule_trace || [];
+  const skipped = trace.skipped_tools || [];
+  $("introspection-summary").textContent = `${trace.mode || "--"} · ${tools.filter((tool) => tool.executed).length}/${tools.length}`;
+
+  const rows = [];
+  rows.push(traceCard("politique", `${trace.policy || "policy"} · ignorés ${skipped.length}`, trace.open_laboratory ? "laboratoire ouvert" : "budget adaptatif"));
+  rows.push(traceCard(
+    "outils",
+    tools.map((tool) => `${tool.name}:${tool.executed ? "run" : "skip"}${tool.success ? ":ok" : ""}${tool.failed ? ":fail" : ""}`).join(" · ") || "aucun",
+    tools.map((tool) => `${tool.name} · ${tool.reason || ""}`).join("\n")
+  ));
+  rows.push(traceCard(
+    "circuits",
+    circuits.map((circuit) => `${circuit.id}@${fmt(circuit.score)}`).join(" · ") || "aucun",
+    circuits.slice(0, 24).map((circuit) => `c${circuit.id} weight=${fmt(circuit.weight)} score=${fmt(circuit.score)}`).join("\n")
+  ));
+  rows.push(traceCard(
+    "mémoire",
+    `${memories.length} rappel(s)`,
+    memories.slice(0, 6).map((memory) => `${fmt(memory.similarity)} · ${memory.text}`).join("\n") || "aucun rappel"
+  ));
+  rows.push(traceCard(
+    "experts",
+    `${experts.length} hot`,
+    experts.map((expert) => `${expert.name} · ${expert.status} · util=${fmt(expert.utility)}`).join("\n") || "aucun expert"
+  ));
+  rows.push(traceCard(
+    "règles",
+    `${rules.length} match(s)`,
+    rules.map((rule) => `${rule.name} -> ${rule.tool} · conf=${fmt(rule.confidence)}`).join("\n") || "aucune règle"
+  ));
+  const candidates = trace.planner_trace?.candidates || [];
+  rows.push(traceCard(
+    "candidats",
+    trace.planner_trace ? `${trace.planner_trace.selected_action} · ${fmt(trace.planner_trace.selected_score)}` : "aucun",
+    candidates.map((candidate) => `${candidate.action} [${(candidate.tool_names || []).join(",")}] score=${fmt(candidate.score)} · ${candidate.reason}`).join("\n")
+  ));
+  $("introspection-list").replaceChildren(...rows);
+}
+
+function traceCard(title, headline, details) {
+  const el = document.createElement("article");
+  el.className = "trace";
+  el.innerHTML = `<strong>${escapeHtml(title)} · ${escapeHtml(headline)}</strong><p>${escapeHtml(details || "").slice(0, 900)}</p>`;
+  return el;
 }
 
 function renderCognitivePanel(workspace) {
@@ -643,8 +703,10 @@ function handleEvent(event) {
     refreshFilesOnly().catch(() => {});
   } else if (payload.event_type === "interaction") {
     addLog("interaction", payload.payload.text || "cycle");
+    if (payload.payload.introspection) renderIntrospection(payload.payload.introspection);
   } else if (payload.event_type === "observation") {
     addLog("observation", (payload.payload.modalities || [payload.payload.modality || "signal"]).join("+"));
+    if (payload.payload.introspection) renderIntrospection(payload.payload.introspection);
   } else if (payload.event_type === "improvement") {
     addLog("amélioration", payload.payload.summary || "cycle terminé");
   } else if (payload.event_type === "learning") {
@@ -694,6 +756,7 @@ function setBusy(value) {
     controls.curriculumCycleBtn,
     controls.curriculumStepBtn,
     controls.observeBtn,
+    controls.openLabToggle,
     controls.processBatchBtn,
     controls.processNextBtn,
     controls.refreshBtn,
@@ -705,11 +768,14 @@ function setBusy(value) {
 }
 
 function currentMode() {
+  if (controls.openLabToggle.checked) return "open";
   return modes[Number(controls.modeSlider.value || 0)] || "fast";
 }
 
 function renderMode() {
-  $("mode-label").textContent = modeLabels[Number(controls.modeSlider.value || 0)] || "Rapide";
+  $("mode-label").textContent = controls.openLabToggle.checked
+    ? "Ouvert"
+    : (modeLabels[Number(controls.modeSlider.value || 0)] || "Rapide");
 }
 
 function chip(text) {

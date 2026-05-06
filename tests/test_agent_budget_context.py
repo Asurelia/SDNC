@@ -11,10 +11,14 @@ def test_budget_manager_modes_and_vram_snapshot():
 
     fast = manager.choose("bonjour", explicit_mode="fast")
     max_budget = manager.choose("analyse architecture profonde", explicit_mode="max")
+    open_budget = manager.choose("autonomie totale", explicit_mode="open")
     snapshot = manager.snapshot(max_budget)
 
     assert fast.mode == "fast"
     assert max_budget.mode == "max"
+    assert open_budget.mode == "open"
+    assert open_budget.max_tool_calls is None
+    assert open_budget.memory_top_k > max_budget.memory_top_k
     assert max_budget.max_hot_experts > fast.max_hot_experts
     assert snapshot.hot_vram_gb <= snapshot.usable_vram_gb
     assert snapshot.within_budget is True

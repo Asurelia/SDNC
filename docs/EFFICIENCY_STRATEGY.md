@@ -1,6 +1,6 @@
 # SDNC Efficiency Strategy
 
-Last updated: 2026-05-05.
+Last updated: 2026-05-06.
 
 ## Objective
 
@@ -52,13 +52,14 @@ The rule is simple: nothing stays hot unless it is useful right now.
 
 ## Cognitive Budgets
 
-`sdnc.agent.budget.BudgetManager` exposes three runtime modes:
+`sdnc.agent.budget.BudgetManager` exposes four runtime modes:
 
 | Mode | Goal | Behavior |
 | ---- | ---- | -------- |
 | `fast` | low latency | small memory recall, few tools, few hot experts |
 | `think` | balanced reasoning | normal recall, local verification, more context |
 | `max` | hard tasks | larger recall, more tools, more hot experts, external advisors only if enabled |
+| `open` | laboratory observation | no tool truncation, large recall/context/expert windows, observe failures before constraining |
 
 These budgets control:
 
@@ -69,7 +70,13 @@ These budgets control:
 - max hot experts;
 - whether source-backed learning may run.
 
-This is the SDNC equivalent of “spend more thought only when needed”.
+This is the SDNC equivalent of “spend more thought only when needed”. The
+exception is `open`: it is intentionally not conservative. It exists to expose
+real failure modes, loops, bad routing, memory pollution, or weak expert choices
+instead of hiding them behind early caps. `open` still records every proposed
+tool, executed tool, skipped tool, active circuit, memory hit, rule, expert, and
+planner candidate in interaction introspection so later constraints can be
+learned from evidence rather than guessed in advance.
 
 ## Context LOD
 
@@ -201,6 +208,29 @@ Implemented files:
 - interaction metadata `expert_lifecycle`
 - web status `expert_summary`
 
+## Observability Before Constraint
+
+Open laboratory mode changes the philosophy from "block first" to "observe
+first":
+
+```text
+signals -> all relevant local proposals -> execution trace
+        -> success/failure/surprise -> memory/rule/expert evidence
+        -> later learned constraint or promotion
+```
+
+The web UI's `Trace vivante` panel displays SDNC's inspectable cognitive trace:
+
+- active circuit ids, weights, and scores;
+- proposed, executed, successful, failed, and skipped tools;
+- memory similarities and salience;
+- hot experts and utilities;
+- matched rules and confidences;
+- planner candidates and scores.
+
+This is not a hidden LLM chain-of-thought. It is SDNC's own measurable runtime
+state, suitable for debugging and training the non-transformer architecture.
+
 ## Dataset Strategy
 
 Datasets are not treated as pretraining sludge. They are streams of experiences:
@@ -249,6 +279,7 @@ less hot memory
 Implemented:
 
 - budget modes and resource estimates;
+- open laboratory mode with no tool truncation and richer introspection;
 - context LOD compression;
 - self-managed expert registry and hot/cold selection;
 - multimodal local signatures;
