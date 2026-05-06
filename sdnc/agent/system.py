@@ -16,6 +16,11 @@ from sdnc.agent.compaction import MemoryCompactionCycle, MemoryCompactionReport
 from sdnc.agent.config import AutonomousConfig
 from sdnc.agent.context_lod import ContextLODCompressor
 from sdnc.agent.cognitive_core import CognitiveCore, CognitiveWorkspace
+from sdnc.agent.curriculum import (
+    CurriculumReport,
+    curriculum_manifest,
+    run_guided_curriculum as run_guided_curriculum_cycle,
+)
 from sdnc.agent.encoding import HashingExperienceEncoder
 from sdnc.agent.expert_atlas import payload_summary
 from sdnc.agent.experts import ExpertManager
@@ -841,6 +846,36 @@ class InteractionLearningSystem:
                 **report.to_payload(),
                 "rule_summary": self.rule_summary(),
                 "rule_conflict_summary": self.rule_conflict_summary(),
+            },
+        )
+        return report
+
+    def curriculum_manifest(self) -> dict[str, Any]:
+        """Return beginner-safe guided training steps."""
+        return curriculum_manifest()
+
+    def run_guided_curriculum(
+        self,
+        step_id: str | None = None,
+        mode: str = "think",
+        sleep_preview: bool = True,
+        batch_size: int = 6,
+    ) -> CurriculumReport:
+        """Run one guided training step or the full local curriculum."""
+        report = run_guided_curriculum_cycle(
+            self,
+            step_id=step_id,
+            mode=mode,
+            sleep_preview=sleep_preview,
+            batch_size=batch_size,
+        )
+        self.learner.save(self.config.state_path)
+        self._emit_event(
+            "curriculum",
+            {
+                **report.to_payload(),
+                "rule_summary": self.rule_summary(),
+                "sensory_prototype_summary": self.sensory_prototype_summary(),
             },
         )
         return report

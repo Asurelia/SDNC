@@ -326,6 +326,75 @@ h3 {
   border-top: 1px solid var(--line);
 }
 
+.curriculum-box {
+  display: grid;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.curriculum-box .panel-title {
+  margin-bottom: 0;
+}
+
+.compact-toggle {
+  min-height: 40px;
+}
+
+.curriculum-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.curriculum-summary {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.curriculum-list {
+  display: grid;
+  gap: 8px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.curriculum-step {
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(238, 243, 239, 0.045);
+}
+
+.curriculum-step strong {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  color: var(--cyan);
+  font-size: 12px;
+}
+
+.curriculum-step strong span {
+  color: var(--faint);
+  font-weight: 600;
+}
+
+.curriculum-step p {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.curriculum-step.passed {
+  border-color: rgba(200, 255, 77, 0.32);
+}
+
+.curriculum-step.failed {
+  border-color: rgba(255, 106, 95, 0.36);
+}
+
 .field-row {
   display: grid;
   grid-template-columns: 0.8fr 1.2fr;

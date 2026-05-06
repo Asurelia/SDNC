@@ -42,6 +42,10 @@ evaluation, UI, packaging, and stretch research, see
   feedback, and improve controls.
 - Beginner-oriented training dashboard with drag/drop file queue, batch
   processing controls, live logs, monitoring, and queue statuses.
+- Guided local curriculum in `sdnc/agent/curriculum.py`: calculator, memory,
+  file lookup, sensory prototype, rules, and replay exercises run through the
+  real learner with scores, feedback, sync events, API endpoints, and web
+  controls.
 - Local-first realtime layer: SQLite WAL source of truth, append-only `sync_events`,
   and SSE stream for the frontend.
 - Optional Convex mirror is available but disabled by default.
@@ -103,6 +107,7 @@ evaluation, UI, packaging, and stretch research, see
    - memory/procedure browser with pruning controls.
    - sensory binding browser and cross-modal trace inspection.
    - budget/VRAM timeline.
+   - saved curriculum history and before/after progress charts.
 5. Add active exploration tools:
    - run controlled read-only experiments against files/web/calculator;
    - record failed hypotheses as limits;

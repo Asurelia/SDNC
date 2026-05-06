@@ -103,6 +103,8 @@ def build_handler(app: SDNCWebApp):
                         "conflict_summary": app.system.rule_conflict_summary(),
                     }
                 )
+            elif parsed.path == "/api/curriculum":
+                self._send_json(app.system.curriculum_manifest())
             elif parsed.path == "/api/stream":
                 query = parse_qs(parsed.query)
                 after = int(query["after"][0]) if "after" in query else None
@@ -249,6 +251,24 @@ def build_handler(app: SDNCWebApp):
             elif parsed.path == "/api/rules/consolidate":
                 report = app.system.run_rule_consolidation()
                 self._send_json({"report": report.to_payload(), "status": self._status_payload()})
+            elif parsed.path == "/api/curriculum/run":
+                try:
+                    report = app.system.run_guided_curriculum(
+                        step_id=str(payload.get("step_id") or "all"),
+                        mode=str(payload.get("mode") or app.system.config.default_cognitive_mode),
+                        sleep_preview=bool(payload.get("sleep_preview", True)),
+                        batch_size=int(payload["batch_size"]) if payload.get("batch_size") else 6,
+                    )
+                except ValueError as exc:
+                    self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                    return
+                self._send_json(
+                    {
+                        "report": report.to_payload(),
+                        "curriculum": app.system.curriculum_manifest(),
+                        "status": self._status_payload(),
+                    }
+                )
             elif parsed.path == "/api/rules/status":
                 rule_id = str(payload.get("rule_id") or "")
                 new_status = str(payload.get("status") or "")

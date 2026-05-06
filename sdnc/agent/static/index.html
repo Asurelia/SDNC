@@ -131,6 +131,32 @@
               Observer
             </button>
           </form>
+
+          <section class="curriculum-box" aria-label="Curriculum guidé">
+            <div class="panel-title">
+              <h2>Curriculum</h2>
+              <span id="curriculum-score" class="pill">--</span>
+            </div>
+            <div class="field-row">
+              <select id="curriculum-select" title="Exercice guidé"></select>
+              <label class="toggle compact-toggle">
+                <input id="curriculum-sleep-toggle" type="checkbox" checked />
+                <span>Replay aperçu</span>
+              </label>
+            </div>
+            <div class="curriculum-actions">
+              <button id="curriculum-step-btn" type="button" class="secondary">
+                <span class="icon">▷</span>
+                Étape
+              </button>
+              <button id="curriculum-cycle-btn" type="button">
+                <span class="icon">▣</span>
+                Cycle
+              </button>
+            </div>
+            <p id="curriculum-summary" class="curriculum-summary">aucun cycle lancé</p>
+            <div id="curriculum-list" class="curriculum-list"></div>
+          </section>
         </section>
 
         <section class="queue-panel panel" aria-label="File d'entraînement">

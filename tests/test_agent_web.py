@@ -33,6 +33,17 @@ def test_web_api_status_and_interact(tmp_path):
         assert status["memory_compaction_summary"]["total"] == 0
         assert status["sensory_prototype_summary"]["total"] == 0
 
+        curriculum = _get_json(f"{base}/api/curriculum")
+        assert curriculum["steps"][0]["id"] == "calculator"
+        guided = _post_json(
+            f"{base}/api/curriculum/run",
+            {"step_id": "calculator", "mode": "think", "sleep_preview": True, "batch_size": 3},
+        )
+        assert guided["report"]["step_count"] == 1
+        assert guided["report"]["steps"][0]["id"] == "calculator"
+        assert guided["report"]["steps"][0]["score"] >= 0.5
+        assert "curriculum" in guided
+
         seed_embedding = app.system.encoder.encode("web rule inspection")
         rule_id = app.system.memory.upsert_rule(
             name="rule:memory_recall:web-inspection",
@@ -147,6 +158,7 @@ def test_web_api_status_and_interact(tmp_path):
         assert rule_page_after_fork["conflicts"][0]["topic"] == "web-conflict"
 
         events = _get_json(f"{base}/api/events")
+        assert any(event["event_type"] == "curriculum" for event in events["events"])
         assert any(event["event_type"] == "interaction" for event in events["events"])
         assert any(event["event_type"] == "observation" for event in events["events"])
         assert any(event["event_type"] == "file" for event in events["events"])

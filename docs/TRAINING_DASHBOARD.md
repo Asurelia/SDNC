@@ -20,6 +20,8 @@ files/signals -> local queue -> PerceptionBus -> sensory memory
 4. The file moves through `queued -> running -> done` or `failed`.
 5. Monitoring updates confidence, novelty, salience, hot experts, tool traces,
    memories, sensory bindings, and append-only logs.
+6. Use `Curriculum` to run one guided exercise or a full beginner cycle when
+   you want an immediate local training check without preparing a dataset.
 
 No file is sent to a cloud service by this dashboard. Uploaded files are written
 under `AutonomousConfig.file_queue_path` and indexed in SQLite.
@@ -42,6 +44,10 @@ under `AutonomousConfig.file_queue_path` and indexed in SQLite.
   manual status correction.
 - `Règles` consolidates verified traces, shows rule links to experts/prototypes,
   and surfaces open rule conflict forks when two useful rules disagree.
+- `Curriculum` runs real guided exercises for calculator routing, short memory,
+  local file lookup, sensory prototypes, rule consolidation, and replay. It
+  shows score, pass/fail notes, per-step metrics, and can keep sleep replay in
+  preview mode.
 
 ## API
 
@@ -50,6 +56,8 @@ under `AutonomousConfig.file_queue_path` and indexed in SQLite.
 - `POST /api/files/status`
 - `POST /api/files/process`
 - `POST /api/files/process-next`
+- `GET /api/curriculum`
+- `POST /api/curriculum/run`
 
 The dashboard remains intentionally local-first. Convex can mirror events later,
 but SQLite is the source of truth.

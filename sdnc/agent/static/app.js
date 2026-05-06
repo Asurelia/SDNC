@@ -1,5 +1,7 @@
 const state = {
   busy: false,
+  curriculum: { steps: [] },
+  curriculumReport: null,
   files: [],
   lastEventId: 0,
   lastResult: null,
@@ -24,6 +26,10 @@ const controls = {
   batchSlider: $("batch-slider"),
   chooseFilesBtn: $("choose-files-btn"),
   compactBtn: $("compact-btn"),
+  curriculumCycleBtn: $("curriculum-cycle-btn"),
+  curriculumSelect: $("curriculum-select"),
+  curriculumSleepToggle: $("curriculum-sleep-toggle"),
+  curriculumStepBtn: $("curriculum-step-btn"),
   dropzone: $("dropzone"),
   fileInput: $("file-input"),
   improveBtn: $("improve-btn"),
@@ -113,6 +119,8 @@ controls.compactBtn.addEventListener("click", () => {
     renderStatus(payload.status);
   });
 });
+controls.curriculumStepBtn.addEventListener("click", () => runCurriculum(controls.curriculumSelect.value || "calculator"));
+controls.curriculumCycleBtn.addEventListener("click", () => runCurriculum("all"));
 controls.processNextBtn.addEventListener("click", () => processNext(1));
 controls.processBatchBtn.addEventListener("click", () => processNext(Number(controls.batchSlider.value || 1)));
 controls.rulesConsolidateBtn.addEventListener("click", consolidateRules);
@@ -243,15 +251,17 @@ async function postJson(path, payload, onSuccess) {
 }
 
 async function refreshAll() {
-  const [status, files, rules] = await Promise.all([
+  const [status, files, rules, curriculum] = await Promise.all([
     fetchJson("/api/status"),
     fetchJson("/api/files"),
     fetchJson("/api/rules"),
+    fetchJson("/api/curriculum"),
   ]);
   renderStatus(status);
   state.files = files.files || [];
   renderFiles(files.summary);
   renderRules(rules);
+  renderCurriculum(curriculum);
   await renderRecent();
 }
 
@@ -331,6 +341,42 @@ function renderRules(data) {
   }));
 }
 
+function renderCurriculum(data) {
+  if (data?.steps) state.curriculum = data;
+  if (data?.report) state.curriculumReport = data.report;
+  const steps = state.curriculum.steps || [];
+  const reportSteps = new Map((state.curriculumReport?.steps || []).map((step) => [step.id, step]));
+
+  const select = controls.curriculumSelect;
+  if (select.options.length !== steps.length) {
+    select.replaceChildren(...steps.map((step) => {
+      const option = document.createElement("option");
+      option.value = step.id;
+      option.textContent = step.title;
+      return option;
+    }));
+  }
+
+  const score = state.curriculumReport?.score;
+  $("curriculum-score").textContent = score === undefined ? "--" : `${Math.round(score * 100)}%`;
+  $("curriculum-summary").textContent = state.curriculumReport?.summary || "aucun cycle lancé";
+
+  const list = $("curriculum-list");
+  if (!steps.length) {
+    list.innerHTML = '<span class="empty">curriculum indisponible</span>';
+    return;
+  }
+  list.replaceChildren(...steps.map((step) => {
+    const result = reportSteps.get(step.id);
+    const el = document.createElement("article");
+    el.className = `curriculum-step ${result ? (result.passed ? "passed" : "failed") : ""}`;
+    const status = result ? `${Math.round(result.score * 100)}%` : step.kind;
+    const notes = result?.notes?.length ? result.notes.join(" · ") : step.objective;
+    el.innerHTML = `<strong>${escapeHtml(step.title)}<span>${escapeHtml(status)}</span></strong><p>${escapeHtml(notes)}</p>`;
+    return el;
+  }));
+}
+
 function renderRuleCard(rule) {
   const el = document.createElement("article");
   el.className = `rule-card ${rule.status !== "enabled" ? "muted-card" : ""}`;
@@ -365,6 +411,20 @@ async function consolidateRules() {
   await postJson("/api/rules/consolidate", {}, (payload) => {
     addLog("règles", payload.report.summary);
     renderStatus(payload.status);
+  });
+}
+
+async function runCurriculum(stepId) {
+  if (state.busy) return;
+  await postJson("/api/curriculum/run", {
+    step_id: stepId,
+    mode: currentMode(),
+    sleep_preview: controls.curriculumSleepToggle.checked,
+    batch_size: Number(controls.batchSlider.value || 6),
+  }, (payload) => {
+    renderCurriculum({ ...payload.curriculum, report: payload.report });
+    renderStatus(payload.status);
+    addLog("curriculum", payload.report.summary);
   });
 }
 
@@ -594,6 +654,9 @@ function handleEvent(event) {
   } else if (payload.event_type === "rules") {
     addLog("règles", payload.payload.summary || payload.payload.action || "mise à jour");
     refreshRules().catch(() => {});
+  } else if (payload.event_type === "curriculum") {
+    addLog("curriculum", payload.payload.summary || "cycle terminé");
+    renderCurriculum({ report: payload.payload });
   }
   renderRecent().catch(() => {});
 }
@@ -615,6 +678,7 @@ function connectEventStream() {
   source.addEventListener("learning", handleEvent);
   source.addEventListener("compaction", handleEvent);
   source.addEventListener("rules", handleEvent);
+  source.addEventListener("curriculum", handleEvent);
   source.onerror = () => {
     source.close();
     window.setTimeout(connectEventStream, 1800);
@@ -627,6 +691,8 @@ function setBusy(value) {
     controls.improveBtn,
     controls.learnBtn,
     controls.compactBtn,
+    controls.curriculumCycleBtn,
+    controls.curriculumStepBtn,
     controls.observeBtn,
     controls.processBatchBtn,
     controls.processNextBtn,

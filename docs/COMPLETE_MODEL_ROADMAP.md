@@ -1,6 +1,6 @@
 # SDNC Complete Model Roadmap
 
-Last updated: 2026-05-05.
+Last updated: 2026-05-06.
 
 This roadmap defines what "finish the model" means for SDNC. SDNC is not
 finished when it can chat once. It is finished when it can learn from
@@ -510,6 +510,24 @@ Primary files:
 ## Phase 8 - Beginner Training Studio
 
 Goal: make the local web UI capable of piloting the whole training process.
+
+Implemented first slice, 2026-05-06:
+
+- `sdnc/agent/curriculum.py` adds a guided local curriculum that exercises
+  calculator routing, short memory, local file search/read, repeated
+  multimodal sensory identity, neuro-symbolic rule consolidation, and bounded
+  replay.
+- `GET /api/curriculum` exposes the curriculum manifest, and
+  `POST /api/curriculum/run` runs one step or the full cycle through the same
+  long-lived `InteractionLearningSystem` used by normal interactions.
+- The web cockpit now includes a `Curriculum` panel with a step selector,
+  replay-preview toggle, step/full-cycle buttons, score, pass/fail notes, and
+  per-step metrics.
+- Curriculum runs append `curriculum` events to `sync_events`, persist learner
+  state, apply local feedback on verified steps, and keep fixture data under
+  the local workspace.
+- Tests cover the curriculum manifest, core guided steps, sensory prototype
+  learning, sparse activation limits, the web API, and event emission.
 
 Tasks:
 

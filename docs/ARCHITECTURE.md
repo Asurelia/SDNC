@@ -92,6 +92,11 @@ does not replace the specialized circuits.
 - `EvaluationHarness`: deterministic probes for tool routing, repeated memory,
   surprise, uncertainty, latency, hot VRAM estimates, and sparse activation
   limits.
+- `GuidedCurriculum`: beginner-safe training cycles that run through the real
+  interaction loop for calculator routing, memory recall, local file lookup,
+  multimodal sensory prototypes, neuro-symbolic rules, and bounded replay. It
+  scores each step, applies local feedback, and emits append-only curriculum
+  events for the web UI.
 - `sync_events`: append-only local event log used by the web UI for realtime
   updates. Convex can mirror these events, but SQLite remains the authority.
 - `sdnc.agent.web`: local browser interface and JSON API around the same
@@ -379,6 +384,8 @@ Web endpoints:
 - `POST /api/compact` - preview or run provenance-preserving memory compaction.
 - `GET /api/events` - recent local sync events.
 - `GET /api/stream` - local realtime SSE stream.
+- `GET /api/curriculum` - guided local training steps.
+- `POST /api/curriculum/run` - run one curriculum step or the full guided cycle.
 - `POST /api/interact` - one interaction.
 - `POST /api/observe` - one or more text/image/audio/video sensory samples.
 - `GET /api/files` - local training file queue.
