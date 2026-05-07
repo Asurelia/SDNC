@@ -515,6 +515,7 @@ function renderSummary(summary) {
 function renderResult(result) {
   const activation = result.activation || {};
   const metadata = result.metadata || {};
+  renderModelOutput(result);
   $("confidence-pill").textContent = `${fmt(activation.confidence)} conf.`;
   $("active-count-pill").textContent = `${activation.active_count || 0} actifs`;
   $("salience-value").textContent = fmt(metadata.salience);
@@ -527,6 +528,23 @@ function renderResult(result) {
     ? `${metadata.sensory_event.modalities.join("+")} bind ${fmt(metadata.sensory_event.binding_score)}`
     : "interaction";
   addLog("résultat", `${sensory} · conf ${fmt(activation.confidence)} · sal ${fmt(metadata.salience)}`);
+}
+
+function renderModelOutput(result) {
+  const metadata = result.metadata || {};
+  const tools = result.tool_results || [];
+  const dataset = metadata.dataset_ingestion;
+  $("model-output-status").textContent = result.learned ? "appris" : "lecture";
+  $("model-output").textContent = result.response || "Aucune réponse.";
+  const meta = [];
+  meta.push(`episode ${result.episode_id || "non stocké"}`);
+  meta.push(`outils ${tools.map((tool) => tool.tool_name).join(", ") || "aucun"}`);
+  meta.push(`circuits ${(result.activation?.indices || []).join(", ") || "aucun"}`);
+  if (dataset) {
+    meta.push(`dataset ${dataset.records_seen || 0}/${dataset.row_count || "?"} lignes`);
+    meta.push(`episodes ${dataset.episodes_stored || 0}`);
+  }
+  $("model-output-meta").replaceChildren(...meta.map((item) => chip(item)));
 }
 
 function renderIntrospection(trace) {
@@ -705,12 +723,22 @@ function handleEvent(event) {
     addLog("interaction", payload.payload.text || "cycle");
     if (payload.payload.introspection) renderIntrospection(payload.payload.introspection);
   } else if (payload.event_type === "observation") {
-    addLog("observation", (payload.payload.modalities || [payload.payload.modality || "signal"]).join("+"));
+    const source = String(payload.payload.source || "");
+    if (!source.startsWith("speech:") && !source.startsWith("file:")) {
+      addLog("observation", (payload.payload.modalities || [payload.payload.modality || "signal"]).join("+"));
+    }
     if (payload.payload.introspection) renderIntrospection(payload.payload.introspection);
   } else if (payload.event_type === "improvement") {
     addLog("amélioration", payload.payload.summary || "cycle terminé");
   } else if (payload.event_type === "learning") {
     addLog("lacune", payload.payload.summary || "apprentissage terminé");
+  } else if (payload.event_type === "dataset") {
+    const body = payload.payload || {};
+    const phase = body.done ? "terminé" : "ingestion";
+    addLog(
+      "dataset",
+      `${phase} · ${body.records_seen || 0} lignes · ${body.episodes_stored || 0} épisodes`
+    );
   } else if (payload.event_type === "compaction") {
     addLog("compaction", payload.payload.summary || "cycle terminé");
   } else if (payload.event_type === "rules") {
@@ -738,6 +766,7 @@ function connectEventStream() {
   source.addEventListener("feedback", handleEvent);
   source.addEventListener("improvement", handleEvent);
   source.addEventListener("learning", handleEvent);
+  source.addEventListener("dataset", handleEvent);
   source.addEventListener("compaction", handleEvent);
   source.addEventListener("rules", handleEvent);
   source.addEventListener("curriculum", handleEvent);

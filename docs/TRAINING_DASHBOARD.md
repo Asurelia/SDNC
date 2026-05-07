@@ -53,6 +53,18 @@ under `AutonomousConfig.file_queue_path` and indexed in SQLite.
 - `Trace vivante` exposes inspectable SDNC state in realtime: active circuits,
   proposed/executed/skipped tools, memory hits, experts, rules, and planner
   candidates. It is telemetry, not an external LLM chain-of-thought.
+- `Sortie modèle` always shows the latest `InteractionResult.response`, episode
+  id, executed tools, active circuits, and dataset ingestion summary when a
+  dataset file is processed.
+- `.parquet` files are treated as datasets when Polars is available. SDNC reads
+  rows such as `source`/`target`, turns them into experiences, and reports rows,
+  samples, stored episodes, and errors instead of pretending the binary file was
+  useful text.
+- Dataset runs emit `dataset` events during ingestion. The event log shows
+  progress lines while the final model output keeps the completed report.
+- Large speech datasets can also be launched outside the browser with
+  `python -m sdnc.agent.speech_training`; this writes a JSONL progress log and
+  uses the same SQLite memory/state files as the web UI.
 
 ## API
 

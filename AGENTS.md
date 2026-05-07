@@ -37,6 +37,7 @@ and feedback-driven plasticity.
 - `sdnc/agent/rules.py` - neuro-symbolic rules with provenance, counterexamples, confidence, conflict forks, and tool-routing hints.
 - `sdnc/agent/curriculum.py` - guided beginner training cycles for calculator, memory, file lookup, sensory prototypes, rules, and replay.
 - `sdnc/agent/dataset_ingestion.py` - local/Hugging Face dataset rows as experiences.
+- `sdnc/agent/speech_training.py` - local French conversation/speech dataset ingestion runner with JSONL progress logs.
 - `sdnc/agent/experience_packs.py` - compressed prototypes for experience packs.
 - `sdnc/agent/eval.py` - deterministic learning/sparsity/tool/memory evaluation harness.
 - `sdnc/agent/sync.py` - optional event mirrors; local SQLite stays authoritative.
@@ -72,6 +73,7 @@ and feedback-driven plasticity.
 - **ALWAYS** persist multimodal observations in `sensory_bindings` when changing perception/runtime behavior.
 - **ALWAYS** keep repeated multimodal identity in `sensory_prototypes`; do not rely on raw media or prompt text as the only recall path.
 - **ALWAYS** use `training_files` plus `sync_events` for dashboard file ingestion and processing state.
+- **ALWAYS** show the latest `InteractionResult.response` in the web UI when changing runtime or training behavior; hidden output makes SDNC impossible to inspect.
 - **ALWAYS** expose guided curriculum runs through `sync_events` and keep them bounded, local, and provenance-backed.
 - **ALWAYS** record lacunes in `learning_gaps` and update `source_stats` when adding source-backed learning behavior.
 - **ALWAYS** update `docs/EFFICIENCY_STRATEGY.md` when changing budget, context compression, or expert residency behavior.

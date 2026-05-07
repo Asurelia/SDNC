@@ -21,6 +21,7 @@ from sdnc.agent.curriculum import (
     curriculum_manifest,
     run_guided_curriculum as run_guided_curriculum_cycle,
 )
+from sdnc.agent.dataset_ingestion import DatasetIngestor
 from sdnc.agent.encoding import HashingExperienceEncoder
 from sdnc.agent.expert_atlas import payload_summary
 from sdnc.agent.experts import ExpertManager
@@ -708,6 +709,8 @@ class InteractionLearningSystem:
             {"action": "started", "file_id": file_id, "name": record.name, "status": "running"},
         )
         try:
+            if record.modality == "dataset":
+                return self._process_dataset_file(record, mode=mode, learn=learn)
             sample = self._sample_from_training_file(record)
             result = self.observe(
                 [sample],
@@ -752,6 +755,62 @@ class InteractionLearningSystem:
                 },
             )
             raise
+
+    def _process_dataset_file(
+        self,
+        record: TrainingFileRecord,
+        mode: str = "fast",
+        learn: bool = True,
+    ) -> InteractionResult:
+        records, metadata = _dataset_records_from_path(Path(record.path), row_limit=self.config.training_dataset_row_limit)
+        report = DatasetIngestor(self).ingest_records(
+            records,
+            source=f"file:{record.name}",
+            limit=metadata.get("row_limit"),
+            text_columns=metadata.get("text_columns") or None,
+            label_columns=metadata.get("label_columns") or None,
+            build_pack=True,
+            learn=learn,
+        )
+        result = report.last_result or InteractionResult.empty(record.name, "Dataset ingestion completed without observable rows.")
+        payload = {
+            "last_confidence": result.activation.confidence,
+            "last_salience": result.metadata.get("salience", 0.0),
+            "last_mode": mode,
+            "dataset": {
+                **metadata,
+                **report.to_payload(),
+            },
+        }
+        self.memory.update_training_file(
+            record.id,
+            status="done",
+            processed_episode_id=result.episode_id,
+            error="; ".join(report.errors[:3]),
+            payload=payload,
+        )
+        result.metadata["dataset_ingestion"] = payload["dataset"]
+        result.response = (
+            "Dataset ingestion complete.\n"
+            f"rows={report.records_seen} samples={report.samples_seen} episodes={report.episodes_stored} "
+            f"errors={len(report.errors)}\n"
+            + result.response
+        )
+        self._emit_event(
+            "file",
+            {
+                "action": "dataset_done",
+                "file_id": record.id,
+                "name": record.name,
+                "status": "done",
+                "episode_id": result.episode_id,
+                "records_seen": report.records_seen,
+                "samples_seen": report.samples_seen,
+                "episodes_stored": report.episodes_stored,
+                "errors": report.errors[:5],
+            },
+        )
+        return result
 
     def process_next_training_file(
         self,
@@ -1460,6 +1519,8 @@ def _safe_filename(name: str) -> str:
 def _modality_for_file(name: str, content_type: str) -> str:
     suffix = Path(name).suffix.lower()
     content_type = content_type.lower()
+    if suffix in {".parquet"}:
+        return "dataset"
     if suffix in IMAGE_EXTENSIONS or content_type.startswith("image/"):
         return "image"
     if suffix in AUDIO_EXTENSIONS or content_type.startswith("audio/"):
@@ -1473,9 +1534,43 @@ def _modality_for_file(name: str, content_type: str) -> str:
 
 def _file_preview(data: bytes, name: str, content_type: str, limit: int = 1200) -> str:
     suffix = Path(name).suffix.lower()
+    if suffix == ".parquet":
+        return f"{name} | parquet dataset | {len(data)} bytes"
     if suffix in TEXT_EXTENSIONS or content_type.startswith("text/") or "json" in content_type:
         return _decode_bytes(data)[:limit]
     return f"{name} | {content_type or 'application/octet-stream'} | {len(data)} bytes"
+
+
+def _dataset_records_from_path(path: Path, row_limit: int | None = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    suffix = path.suffix.lower()
+    if suffix != ".parquet":
+        raise RuntimeError(f"unsupported dataset file type: {suffix}")
+    try:
+        import polars as pl
+    except ImportError as exc:
+        raise RuntimeError("Install `polars` or a parquet reader to process parquet datasets.") from exc
+
+    frame = pl.read_parquet(path)
+    columns = list(frame.columns)
+    text_columns = [name for name in ("source", "target", "text", "prompt", "question", "answer") if name in columns]
+    if not text_columns:
+        text_columns = [name for name, dtype in zip(frame.columns, frame.dtypes) if str(dtype).lower() in {"string", "str", "utf8"}]
+    label_columns = [name for name in ("target", "label", "answer") if name in columns]
+    selected = frame.head(row_limit) if row_limit is not None else frame
+    records = [
+        {key: ("" if value is None else str(value)) for key, value in row.items()}
+        for row in selected.iter_rows(named=True)
+    ]
+    return records, {
+        "path": str(path),
+        "format": "parquet",
+        "row_count": frame.height,
+        "processed_rows": len(records),
+        "row_limit": row_limit,
+        "columns": columns,
+        "text_columns": text_columns,
+        "label_columns": label_columns,
+    }
 
 
 def _read_text_payload(path: Path, limit: int) -> str:

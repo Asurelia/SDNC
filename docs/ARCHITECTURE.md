@@ -90,6 +90,12 @@ does not replace the specialized circuits.
 - `PerceptionBus`: binds one or more sensory signals into a compact event with
   modality list, signal reliabilities, binding score, and a fused embedding.
 - `DatasetIngestor`: streams local or Hugging Face rows as experiences.
+  Local `.parquet` training files are recognized as datasets when Polars is
+  installed; rows such as `source`/`target` become sensory text experiences and
+  ingestion reports are attached to the visible interaction result.
+- `speech_training`: local CLI runner for large French conversation corpora. It
+  ingests canonical `source`/`target` parquet files into the same memory/circuit
+  loop and writes JSONL progress checkpoints outside the browser.
 - `ExperiencePack`: compressed prototypes built from many observations for
   later sparse recall.
 - `EvaluationHarness`: deterministic probes for tool routing, repeated memory,

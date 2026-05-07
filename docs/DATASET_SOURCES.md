@@ -1,6 +1,6 @@
 # SDNC Dataset Sources
 
-Last verified with Hugging Face research: 2026-05-03.
+Last verified with Hugging Face research: 2026-05-07.
 
 SDNC should not ingest datasets as dense pretraining sludge. Each row should
 become an experience:
@@ -29,6 +29,36 @@ interaction traces, sensory bindings, and verifiable outcomes.
 | 3 | `google/speech_commands` | Small CC-BY-4.0 command audio. Good first audio-sensor test. | Limited vocabulary only. |
 | 3 | `google/fleurs` | Multilingual speech recognition/evaluation data. Good for multilingual audio signatures. | Read-speech bias. |
 | 3 | `lmms-lab/Video-MME` | Text+video benchmark for temporal/video understanding. Useful once video keyframe binding is stronger. | Video assets are large. |
+
+## French Speech Bootstrap
+
+For a first "learn to talk in French" run, use instruction/response rows rather
+than raw web text. On 2026-05-07 the local bootstrap corpus was downloaded to
+`E:\ai\sdnc_datasets\speech_fr` and normalized into:
+
+- `E:\ai\sdnc_datasets\speech_fr\sdnc_canonical\sdnc_speech_fr_full.parquet`
+- `E:\ai\sdnc_datasets\speech_fr\sdnc_canonical\sdnc_speech_fr_smoke_2000.parquet`
+
+The canonical file has `source` and `target` columns so SDNC can treat each row
+as an interaction experience. It contains 334,556 deduplicated pairs from:
+
+| Dataset | Role | License/terms checked |
+| --- | --- | --- |
+| `jpacifico/French-Alpaca-dataset-Instruct-110K` | French instruction/response base, 110k rows. | Apache-2.0. |
+| `angeluriot/french_instruct` | French conversation rows from several translated instruction sources, 276k rows on HF. | MIT. |
+| `OpenAssistant/oasst1` | Human-reviewed French prompter -> assistant pairs reconstructed from OASST messages. | Use repository `LICENSE`; keep provenance. |
+
+Launch local ingestion with:
+
+```powershell
+python -m sdnc.agent.speech_training `
+  --dataset E:\ai\sdnc_datasets\speech_fr\sdnc_canonical\sdnc_speech_fr_full.parquet `
+  --progress-log E:\ai\sdnc_datasets\speech_fr\training_logs\speech_training.jsonl
+```
+
+`--max-rows` is optional and only for explicit smoke tests. The production
+command has no row cap; progress is appended as JSONL so the run can be watched
+without trusting the UI.
 
 ## Useful But Not First
 
@@ -66,6 +96,8 @@ interaction traces, sensory bindings, and verifiable outcomes.
 - https://huggingface.co/datasets/openai/gsm8k
 - https://huggingface.co/datasets/osunlp/Multimodal-Mind2Web
 - https://huggingface.co/datasets/OpenAssistant/oasst1
+- https://huggingface.co/datasets/jpacifico/French-Alpaca-dataset-Instruct-110K
+- https://huggingface.co/datasets/angeluriot/french_instruct
 - https://huggingface.co/datasets/HuggingFaceM4/the_cauldron
 - https://huggingface.co/datasets/lmms-lab/multimodal-open-r1-8k-verified
 - https://huggingface.co/datasets/McGill-NLP/WebLINX

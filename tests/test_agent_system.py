@@ -1,3 +1,5 @@
+import pytest
+
 from sdnc.agent.config import AutonomousConfig
 from sdnc.agent.system import InteractionLearningSystem
 
@@ -109,5 +111,46 @@ def test_open_mode_observes_all_local_tool_proposals(tmp_path):
         assert {"memory_recall", "file_read", "file_search", "calculator"}.issubset(set(tools))
         assert introspection["open_laboratory"] is True
         assert introspection["skipped_tools"] == []
+    finally:
+        system.close()
+
+
+def test_parquet_training_file_ingests_dataset_rows(tmp_path):
+    pl = pytest.importorskip("polars")
+    parquet_path = tmp_path / "pairs.parquet"
+    pl.DataFrame(
+        {
+            "source": ["hello", "good night", "blue house", "open door"],
+            "target": ["bonjour", "bonne nuit", "maison bleue", "porte ouverte"],
+        }
+    ).write_parquet(parquet_path)
+    config = AutonomousConfig(
+        input_dim=64,
+        n_circuits=40,
+        memory_path=tmp_path / "memory.sqlite3",
+        state_path=tmp_path / "state.npz",
+        workspace_root=tmp_path,
+        allow_web=False,
+        training_dataset_row_limit=3,
+    )
+    system = InteractionLearningSystem(config)
+    try:
+        record = system.queue_training_file(
+            "pairs.parquet",
+            parquet_path.read_bytes(),
+            content_type="application/octet-stream",
+        )
+        assert record.modality == "dataset"
+
+        result = system.process_training_file(record.id, mode="open", learn=True)
+        updated = system.memory.get_training_file(record.id)
+        dataset = result.metadata["dataset_ingestion"]
+
+        assert "Dataset ingestion complete" in result.response
+        assert dataset["row_count"] == 4
+        assert dataset["records_seen"] == 3
+        assert dataset["episodes_stored"] >= 1
+        assert updated is not None
+        assert updated.payload["dataset"]["records_seen"] == 3
     finally:
         system.close()

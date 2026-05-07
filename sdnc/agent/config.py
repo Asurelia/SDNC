@@ -37,6 +37,7 @@ class AutonomousConfig:
     allow_file_tools: bool = True
     max_upload_mb: int = 64
     training_file_text_chars: int = 16000
+    training_dataset_row_limit: int | None = None
 
     # Optional remote sync. Local SQLite remains the source of truth.
     sync_to_convex: bool = False

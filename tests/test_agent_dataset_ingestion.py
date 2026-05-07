@@ -1,8 +1,10 @@
 import numpy as np
+import pytest
 
 from sdnc.agent.config import AutonomousConfig
 from sdnc.agent.dataset_ingestion import DatasetIngestor
 from sdnc.agent.experience_packs import ExperiencePack
+from sdnc.agent.speech_training import run_speech_training
 from sdnc.agent.system import InteractionLearningSystem
 
 
@@ -62,3 +64,32 @@ def test_experience_pack_roundtrip(tmp_path):
         assert loaded.prototypes[0].count == report.pack.prototypes[0].count
     finally:
         system.close()
+
+
+def test_speech_training_runner_ingests_canonical_parquet(tmp_path):
+    pl = pytest.importorskip("polars")
+    dataset = tmp_path / "speech.parquet"
+    progress = tmp_path / "progress.jsonl"
+    pl.DataFrame(
+        {
+            "source": ["bonjour", "explique une addition"],
+            "target": ["salut, je t'écoute", "une addition combine deux nombres"],
+            "dataset": ["fixture", "fixture"],
+        }
+    ).write_parquet(dataset)
+
+    report = run_speech_training(
+        dataset_path=dataset,
+        memory_path=tmp_path / "memory.sqlite3",
+        state_path=tmp_path / "state.npz",
+        workspace_root=tmp_path,
+        progress_log=progress,
+        batch_size=1,
+        auto_improve=False,
+    )
+
+    lines = progress.read_text(encoding="utf-8").strip().splitlines()
+    assert report.done
+    assert report.records_seen == 2
+    assert report.episodes_stored >= 1
+    assert len(lines) >= 2

@@ -331,6 +331,33 @@ h3 {
   border-top: 1px solid var(--line);
 }
 
+.output-panel {
+  border-color: rgba(88, 215, 255, 0.28);
+}
+
+.model-output {
+  width: 100%;
+  min-height: 180px;
+  max-height: 360px;
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px;
+  color: var(--ink);
+  background: rgba(3, 5, 7, 0.55);
+  font: 12px/1.45 "Cascadia Code", Consolas, monospace;
+}
+
+.output-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
 .curriculum-box {
   display: grid;
   gap: 10px;
