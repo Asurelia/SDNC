@@ -79,10 +79,12 @@ does not replace the specialized circuits.
 - `PersistentMemory`: SQLite episodic, procedural, and conversation-example
   memory. Episodes store embeddings, active circuits, salience, and feedback.
   Conversation examples store source-backed prompt/response pairs learned from
-  datasets or direct interaction. These examples are retrieval evidence, not a
-  single source of truth: response synthesis filters them through lightweight
-  intent compatibility before using a learned answer. Procedures store learned
-  tool-use patterns. The connection runs in WAL mode with local indexes for
+  datasets, direct teaching, correction, or interaction feedback. These examples
+  are retrieval evidence, not a single source of truth: response synthesis
+  filters them through lightweight intent compatibility before using a learned
+  answer, and later feedback updates their success/failure counts. Procedures
+  store learned tool-use patterns. The connection runs in WAL mode with local
+  indexes for
   concurrent UI reads and learning writes. At runtime, it also maintains a
   RAM-side dense vector index over episodes, conversation examples, sensory
   bindings, sensory prototypes, procedures, rules, and experts so large
@@ -157,6 +159,21 @@ an example that says "translate Bonjour into Spanish" can be retrieved for a
 simple greeting, but it is rejected because its intent is translation, not
 greeting. Natural arithmetic similarly forces the calculator tool even when a
 near episodic memory or conversation example looks confident.
+
+Direct teaching and correction use the same memory path:
+
+```text
+user correction/teaching -> teach_response
+                          -> conversation_examples + positive local feedback
+                          -> episodic memory + sync_events
+                          -> future gated recall
+```
+
+Every synthesized answer reports a `conversation_decision` metadata packet with
+the detected intent, whether a recalled example was accepted, the selected
+example id when applicable, and the rejection reason otherwise. User feedback on
+the last interaction is propagated back to the selected conversation example so
+bad replies become weaker evidence instead of staying frozen in memory.
 
 ## Efficiency Path
 
@@ -432,6 +449,8 @@ Web endpoints:
 - `GET /api/curriculum` - guided local training steps.
 - `POST /api/curriculum/run` - run one curriculum step or the full guided cycle.
 - `POST /api/interact` - one interaction.
+- `POST /api/teach` - teach or correct one prompt/response pair through the
+  same conversation memory used by later interactions.
 - `POST /api/observe` - one or more text/image/audio/video sensory samples.
 - `GET /api/files` - local training file queue.
 - `POST /api/files/upload` - add a local browser-selected file to the queue.

@@ -268,7 +268,7 @@ class InteractionLearningSystem:
         else:
             improvement_report = None
 
-        response = self._synthesize_response(
+        response, conversation_decision = self._synthesize_response(
             text,
             activation,
             memories,
@@ -296,6 +296,7 @@ class InteractionLearningSystem:
                 "resource_budget": _resource_payload(resource_snapshot),
                 "expert_lifecycle": _expert_report_payload(expert_report),
                 "conversation_examples": _conversation_examples_payload(conversation_examples),
+                "conversation_decision": conversation_decision,
                 "neuro_symbolic_rules": _rule_matches_payload(rule_matches),
                 "rule_attachments": {"expert_links": expert_rule_link_count},
                 "cognitive_core": _cognitive_workspace_payload(workspace),
@@ -340,6 +341,152 @@ class InteractionLearningSystem:
                 "planner_action": action_plan.selected.action,
                 "planner_score": action_plan.selected.score,
                 "introspection": result.metadata["introspection"],
+            },
+        )
+        return result
+
+    def teach_response(
+        self,
+        prompt: str,
+        response: str,
+        *,
+        source: str = "user_teach",
+        context: dict[str, Any] | None = None,
+    ) -> InteractionResult:
+        """Teach SDNC one source-backed conversation response.
+
+        This is an explicit user teaching path, not hidden distillation. It
+        stores the example, gives it positive local feedback, and exposes the
+        learned example id so later interactions and corrections remain
+        inspectable.
+        """
+        prompt = " ".join(str(prompt or "").split())
+        response = " ".join(str(response or "").split())
+        if not prompt:
+            raise ValueError("prompt is required")
+        if not response:
+            raise ValueError("response is required")
+
+        teach_context = {
+            **dict(context or {}),
+            "kind": "conversation_teach",
+            "source": source,
+        }
+        embedding = self.encoder.encode(prompt)
+        activation = self.learner.activate(embedding)
+        memories = self.memory.retrieve_similar(embedding, top_k=self.config.memory_top_k)
+        example_id = self.memory.upsert_conversation_example(
+            source=source,
+            prompt=prompt,
+            response=response,
+            embedding=embedding,
+            confidence=0.96,
+            payload={
+                "kind": "direct_teach",
+                "source": source,
+                "taught_at": time(),
+            },
+        )
+        self.memory.record_conversation_feedback(example_id, success=True)
+        self.memory.record_source_feedback(source, accepted=True)
+        salience = 1.0
+        self.learner.learn(embedding, activation, salience, 1.0)
+        episode_id = self.memory.store_episode(
+            text=f"TEACH conversation: {prompt}",
+            context={
+                **teach_context,
+                "conversation_example_id": example_id,
+                "target_response": response,
+            },
+            embedding=embedding,
+            active_circuits=activation.indices,
+            salience=salience,
+            outcome=response,
+            feedback_score=1.0,
+        )
+        self.learner.save(self.config.state_path)
+
+        result = InteractionResult(
+            episode_id=episode_id,
+            timestamp=time(),
+            input_text=prompt,
+            response=f"Appris. Quand tu dis : {prompt} | je répondrai : {response}",
+            activation=activation,
+            memories=memories,
+            tool_results=[],
+            learned=True,
+            metadata={
+                "salience": salience,
+                "tool_names": [],
+                "proposed_tool_names": [],
+                "conversation_teach": {
+                    "example_id": example_id,
+                    "source": source,
+                    "prompt": prompt[:360],
+                    "response": response[:500],
+                    "confidence": 0.96,
+                },
+                "conversation_decision": {
+                    "intent": _response_intent(prompt),
+                    "accepted": True,
+                    "selected_id": example_id,
+                    "selected_similarity": 1.0,
+                    "selected_source": source,
+                    "selected_prompt": prompt[:240],
+                    "rejected_count": 0,
+                    "best_rejected_id": "",
+                    "best_rejected_similarity": 0.0,
+                    "best_rejected_prompt": "",
+                    "reason": "direct_teach",
+                },
+                "introspection": {
+                    "mode": "teach",
+                    "open_laboratory": False,
+                    "circuit_trace": [
+                        {
+                            "index": idx,
+                            "weight": weight,
+                            "score": score,
+                        }
+                        for idx, weight, score in zip(
+                            activation.indices,
+                            activation.weights,
+                            activation.scores,
+                        )
+                    ],
+                    "tool_trace": [],
+                    "memory_trace": [
+                        {
+                            "id": memory.id,
+                            "similarity": round(memory.similarity, 4),
+                            "salience": round(memory.salience, 4),
+                            "text": memory.text[:240],
+                        }
+                        for memory in memories
+                    ],
+                    "conversation_trace": {
+                        "example_id": example_id,
+                        "source": source,
+                        "prompt": prompt[:240],
+                        "response": response[:360],
+                    },
+                },
+            },
+        )
+        self._last_result = result
+        self._emit_event(
+            "teaching",
+            {
+                "episode_id": episode_id,
+                "example_id": example_id,
+                "source": source,
+                "prompt": prompt,
+                "response": response,
+                "active_count": activation.active_count,
+                "active_circuits": activation.indices,
+                "confidence": activation.confidence,
+                "novelty": activation.novelty,
+                "salience": salience,
             },
         )
         return result
@@ -613,15 +760,28 @@ class InteractionLearningSystem:
             self._last_result.tool_results,
             feedback,
         )
+        decision = self._last_result.metadata.get("conversation_decision") or {}
+        selected_example_id = str(decision.get("selected_id") or "")
+        if selected_example_id:
+            self.memory.record_conversation_feedback(
+                selected_example_id,
+                success=feedback.clipped_score() >= 0.0,
+            )
         self.learner.save(self.config.state_path)
         self._last_result.response = "Feedback integrated into local circuits and procedural memory."
         self._last_result.metadata["feedback_score"] = feedback.clipped_score()
+        self._last_result.metadata["conversation_feedback"] = {
+            "example_id": selected_example_id,
+            "updated": bool(selected_example_id),
+            "success": feedback.clipped_score() >= 0.0,
+        }
         self._emit_event(
             "feedback",
             {
                 "episode_id": self._last_result.episode_id,
                 "score": feedback.clipped_score(),
                 "text": text,
+                "conversation_example_id": selected_example_id,
             },
         )
         return self._last_result
@@ -1455,16 +1615,21 @@ class InteractionLearningSystem:
         conversation_examples: list[ConversationExampleRecord],
         tool_results: list[ToolResult],
         salience: float,
-    ) -> str:
+    ) -> tuple[str, dict[str, Any]]:
+        decision = _conversation_decision_base(text, conversation_examples)
         for result in tool_results:
             if result.success and result.tool_name == "calculator":
-                return result.content.strip()
+                return result.content.strip(), {**decision, "reason": "tool:calculator", "accepted": False}
 
         normalized_input = _normalized_text(text)
         if conversation_examples:
             for example in conversation_examples:
                 if _normalized_text(example.prompt) == normalized_input:
-                    return example.response
+                    return example.response, _conversation_decision_selected(
+                        text,
+                        example,
+                        reason="exact_prompt",
+                    )
             compatible_examples = [
                 example
                 for example in conversation_examples
@@ -1473,31 +1638,46 @@ class InteractionLearningSystem:
             if compatible_examples:
                 best = compatible_examples[0]
                 if best.similarity >= _conversation_similarity_threshold(text, best):
-                    return best.response
+                    return best.response, _conversation_decision_selected(
+                        text,
+                        best,
+                        reason="compatible_example",
+                    )
 
         intent = _response_intent(text)
         if intent == "greeting":
-            return "Salut, je suis là. Je peux apprendre avec tes exemples, tes fichiers et tes retours."
+            return (
+                "Salut, je suis là. Je peux apprendre avec tes exemples, tes fichiers et tes retours.",
+                {**decision, "reason": "greeting_fallback", "accepted": False},
+            )
         if intent == "translation":
             return (
-                "Je reconnais une demande de traduction, mais je n'ai pas encore trouvé "
-                "un exemple assez compatible pour répondre sans inventer."
+                (
+                    "Je reconnais une demande de traduction, mais je n'ai pas encore trouvé "
+                    "un exemple assez compatible pour répondre sans inventer."
+                ),
+                {**decision, "reason": "translation_gap", "accepted": False},
             )
         if intent == "math":
-            return "Je reconnais un problème de calcul, mais mon outil n'a pas encore produit de résultat fiable."
+            return (
+                "Je reconnais un problème de calcul, mais mon outil n'a pas encore produit de résultat fiable.",
+                {**decision, "reason": "math_tool_gap", "accepted": False},
+            )
 
         if conversation_examples:
             best = conversation_examples[0]
             return (
                 "Je retrouve des exemples proches, mais ils ne correspondent pas assez à l'intention. "
-                f"Meilleur exemple rejeté : {best.prompt[:180]}"
+                f"Meilleur exemple rejeté : {best.prompt[:180]}",
+                {**decision, "reason": "incompatible_examples", "accepted": False},
             )
 
         if memories:
             best_memory = memories[0]
             return (
                 "Je n'ai pas encore appris une réponse directe à ça. "
-                f"Je retrouve surtout ceci : {best_memory.text[:240]}"
+                f"Je retrouve surtout ceci : {best_memory.text[:240]}",
+                {**decision, "reason": "episodic_memory_only", "accepted": False},
             )
 
         lines = [
@@ -1516,7 +1696,7 @@ class InteractionLearningSystem:
             lines.append(f"tool:{result.tool_name}:{status}: {content}")
         if not tool_results:
             lines.append("tools: none selected")
-        return "\n".join(lines)
+        return "\n".join(lines), {**decision, "reason": "diagnostic_fallback", "accepted": False}
 
     def _synthesize_observation_response(
         self,
@@ -1730,6 +1910,46 @@ def _conversation_examples_payload(examples: list[ConversationExampleRecord]) ->
         }
         for example in examples
     ]
+
+
+def _conversation_decision_base(
+    text: str,
+    examples: list[ConversationExampleRecord],
+) -> dict[str, Any]:
+    best = examples[0] if examples else None
+    return {
+        "intent": _response_intent(text),
+        "accepted": False,
+        "selected_id": "",
+        "selected_similarity": 0.0,
+        "selected_source": "",
+        "selected_prompt": "",
+        "rejected_count": len(examples),
+        "best_rejected_id": best.id if best else "",
+        "best_rejected_similarity": round(best.similarity, 4) if best else 0.0,
+        "best_rejected_prompt": best.prompt[:240] if best else "",
+        "reason": "no_conversation_example",
+    }
+
+
+def _conversation_decision_selected(
+    text: str,
+    example: ConversationExampleRecord,
+    reason: str,
+) -> dict[str, Any]:
+    return {
+        "intent": _response_intent(text),
+        "accepted": True,
+        "selected_id": example.id,
+        "selected_similarity": round(example.similarity, 4),
+        "selected_source": example.source,
+        "selected_prompt": example.prompt[:240],
+        "rejected_count": 0,
+        "best_rejected_id": "",
+        "best_rejected_similarity": 0.0,
+        "best_rejected_prompt": "",
+        "reason": reason,
+    }
 
 
 def _normalized_text(text: str) -> str:

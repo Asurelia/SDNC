@@ -233,6 +233,27 @@ def build_handler(app: SDNCWebApp):
                 note = str(payload.get("text", ""))
                 result = app.system.give_feedback(score, note)
                 self._send_json({"result": _interaction_payload(result), "status": self._status_payload()})
+            elif parsed.path == "/api/teach":
+                prompt = str(payload.get("prompt") or "").strip()
+                response = str(payload.get("response") or "").strip()
+                source = str(payload.get("source") or "web_teach").strip() or "web_teach"
+                if not prompt or not response:
+                    self._send_json(
+                        {"error": "prompt and response are required"},
+                        status=HTTPStatus.BAD_REQUEST,
+                    )
+                    return
+                try:
+                    result = app.system.teach_response(
+                        prompt,
+                        response,
+                        source=source,
+                        context={"ui": "web", "mode": "teach"},
+                    )
+                except ValueError as exc:
+                    self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                    return
+                self._send_json({"result": _interaction_payload(result), "status": self._status_payload()})
             elif parsed.path == "/api/improve":
                 report = app.system.run_self_improvement()
                 self._send_json({"report": _report_payload(report), "status": self._status_payload()})

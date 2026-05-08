@@ -46,6 +46,22 @@ def test_web_api_status_and_interact(tmp_path):
         assert guided["report"]["steps"][0]["score"] >= 0.5
         assert "curriculum" in guided
 
+        taught = _post_json(
+            f"{base}/api/teach",
+            {
+                "prompt": "formule web spéciale",
+                "response": "réponse web apprise",
+                "source": "test_web",
+            },
+        )
+        assert taught["result"]["metadata"]["conversation_teach"]["source"] == "test_web"
+        taught_answer = _post_json(
+            f"{base}/api/interact",
+            {"text": "formule web spéciale", "mode": "think"},
+        )
+        assert taught_answer["result"]["response"] == "réponse web apprise"
+        assert taught_answer["result"]["metadata"]["conversation_decision"]["accepted"] is True
+
         seed_embedding = app.system.encoder.encode("web rule inspection")
         rule_id = app.system.memory.upsert_rule(
             name="rule:memory_recall:web-inspection",
@@ -169,6 +185,7 @@ def test_web_api_status_and_interact(tmp_path):
         assert any(event["event_type"] == "sleep" for event in events["events"])
         assert any(event["event_type"] == "compaction" for event in events["events"])
         assert any(event["event_type"] == "rules" for event in events["events"])
+        assert any(event["event_type"] == "teaching" for event in events["events"])
 
         recent = _get_json(f"{base}/api/recent")
         assert any(binding["modalities"] == ["text", "image"] for binding in recent["sensory_bindings"])

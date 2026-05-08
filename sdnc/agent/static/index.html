@@ -115,6 +115,31 @@
             </button>
           </form>
 
+          <form id="teach-form" class="compact-form teach-form">
+            <textarea
+              id="teach-prompt"
+              rows="3"
+              placeholder="Déclencheur à apprendre..."
+              autocomplete="off"
+            ></textarea>
+            <textarea
+              id="teach-response"
+              rows="3"
+              placeholder="Réponse attendue..."
+              autocomplete="off"
+            ></textarea>
+            <div class="teach-actions">
+              <button id="teach-btn" type="submit" class="primary-alt">
+                <span class="icon">＋</span>
+                Enseigner
+              </button>
+              <button id="correct-last-btn" type="button" class="secondary">
+                <span class="icon">✓</span>
+                Corriger dernière
+              </button>
+            </div>
+          </form>
+
           <form id="sensory-form" class="compact-form">
             <div class="field-row">
               <select id="sensor-modality" title="Modalité">

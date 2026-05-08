@@ -83,6 +83,63 @@ def test_interaction_uses_learned_conversation_example(tmp_path):
         system.close()
 
 
+def test_teach_response_learns_direct_conversation_example(tmp_path):
+    config = AutonomousConfig(
+        input_dim=64,
+        n_circuits=40,
+        memory_path=tmp_path / "memory.sqlite3",
+        state_path=tmp_path / "state.npz",
+        workspace_root=tmp_path,
+        allow_web=False,
+    )
+    system = InteractionLearningSystem(config)
+    try:
+        taught = system.teach_response(
+            "mot de passe atelier",
+            "réponse apprise localement",
+            source="test_teach",
+        )
+
+        result = system.interact("mot de passe atelier", learn=False)
+
+        assert taught.metadata["conversation_teach"]["source"] == "test_teach"
+        assert result.response == "réponse apprise localement"
+        assert result.metadata["conversation_decision"]["accepted"] is True
+        assert result.metadata["conversation_decision"]["selected_id"] == taught.metadata["conversation_teach"]["example_id"]
+    finally:
+        system.close()
+
+
+def test_feedback_updates_selected_conversation_example(tmp_path):
+    config = AutonomousConfig(
+        input_dim=64,
+        n_circuits=40,
+        memory_path=tmp_path / "memory.sqlite3",
+        state_path=tmp_path / "state.npz",
+        workspace_root=tmp_path,
+        allow_web=False,
+    )
+    system = InteractionLearningSystem(config)
+    try:
+        taught = system.teach_response(
+            "salutation spéciale",
+            "réponse initiale",
+            source="test_teach",
+        )
+        result = system.interact("salutation spéciale", learn=False)
+        feedback = system.give_feedback(-1.0, "mauvaise réponse")
+        matches = system.memory.retrieve_conversation_examples(
+            system.encoder.encode("salutation spéciale"),
+            top_k=1,
+        )
+
+        assert result.metadata["conversation_decision"]["selected_id"] == taught.metadata["conversation_teach"]["example_id"]
+        assert feedback.metadata["conversation_feedback"]["updated"] is True
+        assert matches[0].failure_count >= 1
+    finally:
+        system.close()
+
+
 def test_interaction_rejects_incompatible_conversation_example(tmp_path):
     config = AutonomousConfig(
         input_dim=64,

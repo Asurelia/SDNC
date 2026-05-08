@@ -331,6 +331,16 @@ h3 {
   border-top: 1px solid var(--line);
 }
 
+.teach-form {
+  background: rgba(88, 215, 255, 0.045);
+}
+
+.teach-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
 .output-panel {
   border-color: rgba(88, 215, 255, 0.28);
 }

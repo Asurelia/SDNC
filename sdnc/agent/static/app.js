@@ -43,11 +43,16 @@ const controls = {
   refreshBtn: $("refresh-btn"),
   rulesConsolidateBtn: $("rules-consolidate-btn"),
   sendBtn: $("send-btn"),
+  correctLastBtn: $("correct-last-btn"),
+  teachBtn: $("teach-btn"),
   toolsToggle: $("tools-toggle"),
 };
 
 const promptForm = $("prompt-form");
 const promptInput = $("prompt");
+const teachForm = $("teach-form");
+const teachPrompt = $("teach-prompt");
+const teachResponse = $("teach-response");
 const sensoryForm = $("sensory-form");
 const sensorModality = $("sensor-modality");
 const sensorLabel = $("sensor-label");
@@ -64,6 +69,17 @@ promptForm.addEventListener("submit", async (event) => {
     renderResult(payload.result);
     renderStatus(payload.status);
   });
+});
+
+teachForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  await teachPair(teachPrompt.value.trim(), teachResponse.value.trim());
+});
+
+controls.correctLastBtn.addEventListener("click", async () => {
+  const response = teachResponse.value.trim();
+  const prompt = state.lastResult?.input_text || teachPrompt.value.trim();
+  await teachPair(prompt, response);
 });
 
 sensoryForm.addEventListener("submit", async (event) => {
@@ -90,6 +106,22 @@ sensoryForm.addEventListener("submit", async (event) => {
     renderStatus(payload.status);
   });
 });
+
+async function teachPair(prompt, response) {
+  if (!prompt || !response || state.busy) return;
+  addLog("enseignement", prompt);
+  await postJson("/api/teach", {
+    prompt,
+    response,
+    source: "web_teach",
+  }, (payload) => {
+    state.lastResult = payload.result;
+    teachPrompt.value = "";
+    teachResponse.value = "";
+    renderResult(payload.result);
+    renderStatus(payload.status);
+  });
+}
 
 controls.modeSlider.addEventListener("input", renderMode);
 controls.openLabToggle.addEventListener("change", renderMode);
@@ -541,12 +573,22 @@ function renderModelOutput(result) {
   const metadata = result.metadata || {};
   const tools = result.tool_results || [];
   const dataset = metadata.dataset_ingestion;
+  const taught = metadata.conversation_teach;
+  const decision = metadata.conversation_decision;
   $("model-output-status").textContent = result.learned ? "appris" : "lecture";
   $("model-output").textContent = result.response || "Aucune réponse.";
   const meta = [];
   meta.push(`episode ${result.episode_id || "non stocké"}`);
   meta.push(`outils ${tools.map((tool) => tool.tool_name).join(", ") || "aucun"}`);
   meta.push(`circuits ${(result.activation?.indices || []).join(", ") || "aucun"}`);
+  if (decision) {
+    meta.push(`intention ${decision.intent || "?"}`);
+    meta.push(`conversation ${decision.accepted ? "acceptée" : "rejetée"}:${decision.reason || "?"}`);
+  }
+  if (taught) {
+    meta.push(`exemple ${String(taught.example_id || "").slice(0, 8)}`);
+    meta.push(`source ${taught.source || "teach"}`);
+  }
   if (dataset) {
     meta.push(`dataset ${dataset.records_seen || 0}/${dataset.row_count || "?"} lignes`);
     meta.push(`episodes ${dataset.episodes_stored || 0}`);
@@ -729,6 +771,8 @@ function handleEvent(event) {
   } else if (payload.event_type === "interaction") {
     addLog("interaction", payload.payload.text || "cycle");
     if (payload.payload.introspection) renderIntrospection(payload.payload.introspection);
+  } else if (payload.event_type === "teaching") {
+    addLog("enseignement", payload.payload.prompt || "exemple appris");
   } else if (payload.event_type === "observation") {
     const source = String(payload.payload.source || "");
     if (!source.startsWith("speech:") && !source.startsWith("file:")) {
@@ -798,6 +842,8 @@ function setBusy(value) {
     controls.refreshBtn,
     controls.rulesConsolidateBtn,
     controls.sendBtn,
+    controls.correctLastBtn,
+    controls.teachBtn,
   ]) {
     element.disabled = value;
   }
