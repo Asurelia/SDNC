@@ -367,6 +367,8 @@ def build_handler(app: SDNCWebApp):
 
         def _status_payload(self) -> dict[str, Any]:
             config = app.system.config
+            memory_index = app.system.memory.refresh_vector_indexes()
+            memory_storage = app.system.memory.memory_storage_summary()
             return {
                 "n_circuits": config.n_circuits,
                 "max_circuits": config.max_circuits,
@@ -399,6 +401,8 @@ def build_handler(app: SDNCWebApp):
                 },
                 "modalities": sorted(SUPPORTED_MODALITIES),
                 "tools": app.system.registry.names(),
+                "memory_index": memory_index,
+                "memory_storage": memory_storage,
                 "memory_path": str(config.memory_path),
                 "state_path": str(config.state_path),
                 "auto_improve_enabled": config.auto_improve_enabled,

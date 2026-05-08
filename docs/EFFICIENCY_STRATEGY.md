@@ -1,6 +1,6 @@
 # SDNC Efficiency Strategy
 
-Last updated: 2026-05-06.
+Last updated: 2026-05-08.
 
 ## Objective
 
@@ -135,6 +135,25 @@ Repeated sensory events are also compacted into prototypes. A prototype stores a
 centroid, modalities, sample/source ids, confidence, observation count, and
 compact features. This gives SDNC a reusable identity anchor for recurring
 multimodal situations without keeping raw media or long descriptions hot.
+
+During large dataset ingestion, prototype recall must not scan every SQLite row
+on every observation. `PersistentMemory` therefore rebuilds a local dense vector
+index from SQLite at startup and updates it on each write for episodes, sensory
+bindings, sensory prototypes, procedures, rules, and experts. SQLite remains the
+source of truth; the hot vector index is a RAM-side acceleration layer. If a web
+UI process and a training process share the same database, the reader detects
+SQLite `data_version` changes and incrementally refreshes rows newer than its
+per-table watermarks instead of rebuilding everything on every status request.
+The dashboard exposes both storage and index counts as `DB/index` so lag during
+active writes stays observable. On the French speech run, sensory prototype
+recall dropped from roughly 1200 ms per lookup to roughly 2 ms after indexing;
+at roughly 44k episodes, 45k sensory bindings, and 27k prototypes, indexed
+prototype recall remained around 2 ms.
+
+Circuit state checkpoints are written through a temporary file plus atomic
+replace. Loading a partial `.npz` returns `False` instead of crashing the web UI,
+which keeps concurrent training and observation usable while preserving SQLite
+as the durable source for learned episodes.
 
 Repeated episodic memories are compacted separately by `MemoryCompactionCycle`.
 It writes cold `memory_compactions` prototypes with centroid embeddings, source

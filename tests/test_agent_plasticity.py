@@ -44,3 +44,24 @@ def test_grow_circuit_expands_capacity():
     assert config.n_circuits == 5
     assert learner.circuit_keys.shape == (5, 8)
     assert learner.connection_weights.shape == (5, 5)
+
+
+def test_save_load_roundtrip(tmp_path):
+    path = tmp_path / "state.npz"
+    config = AutonomousConfig(input_dim=8, n_circuits=4)
+    learner = LocalCircuitLearner(config)
+    learner.circuit_state[:] = np.arange(4, dtype=np.float32)
+
+    learner.save(path)
+
+    loaded = LocalCircuitLearner(AutonomousConfig(input_dim=8, n_circuits=4))
+    assert loaded.load(path) is True
+    assert np.allclose(loaded.circuit_state, learner.circuit_state)
+
+
+def test_load_ignores_partial_state_file(tmp_path):
+    path = tmp_path / "state.npz"
+    path.write_bytes(b"partial npz")
+    learner = LocalCircuitLearner(AutonomousConfig(input_dim=8, n_circuits=4))
+
+    assert learner.load(path) is False

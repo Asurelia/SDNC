@@ -297,6 +297,13 @@ function renderStatus(status) {
   $("hot-experts").textContent = status.expert_summary
     ? `${status.expert_summary.hot}/${status.expert_summary.total}`
     : "--";
+  const memoryStorage = status.memory_storage || status.memory_index;
+  $("memory-index-count").textContent = status.memory_index && memoryStorage
+    ? `${memoryStorage.episodes || 0}/${status.memory_index.episodes || 0} ep`
+    : "--";
+  $("prototype-index-count").textContent = status.memory_index && memoryStorage
+    ? `${memoryStorage.sensory_prototypes || 0}/${status.memory_index.sensory_prototypes || 0}`
+    : "--";
   $("workspace-slots").textContent = status.cognitive_core
     ? status.cognitive_core.workspace_slots
     : "--";

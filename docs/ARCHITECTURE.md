@@ -74,10 +74,17 @@ does not replace the specialized circuits.
   an explicit conflict fork instead of overwriting either rule.
 - `LocalCircuitLearner`: maintains circuit keys, liquid state, usage counters,
   and sparse inter-circuit weights. It activates at most 5 percent of circuits.
+  State checkpoints are saved by atomic replace and partial reads are ignored so
+  the web UI can start while another process is checkpointing.
 - `PersistentMemory`: SQLite episodic and procedural memory. Episodes store
   embeddings, active circuits, salience, and feedback. Procedures store learned
   tool-use patterns. The connection runs in WAL mode with local indexes for
-  concurrent UI reads and learning writes.
+  concurrent UI reads and learning writes. At runtime, it also maintains a
+  RAM-side dense vector index over episodes, sensory bindings, sensory
+  prototypes, procedures, rules, and experts so large ingestion runs do not
+  rescan every prototype row on each observation. Long-lived readers incrementally
+  refresh this RAM index from SQLite watermarks when another process writes to
+  the same local database.
 - `ToolRegistry`: real tools for memory recall, web search, workspace file
   search/read, and arithmetic experiments.
 - `InteractionLearningSystem`: orchestrates the loop and persists state.

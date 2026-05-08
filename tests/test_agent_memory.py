@@ -23,6 +23,31 @@ def test_persistent_memory_roundtrip(tmp_path):
     memory.close()
 
 
+def test_vector_index_refreshes_external_writes(tmp_path):
+    memory_path = tmp_path / "memory.sqlite3"
+    reader = PersistentMemory(memory_path, embedding_dim=4)
+    writer = PersistentMemory(memory_path, embedding_dim=4)
+    emb = np.array([1, 0, 0, 0], dtype=np.float32)
+
+    episode_id = writer.store_episode(
+        text="external training write",
+        context={"source": "writer"},
+        embedding=emb,
+        active_circuits=[1],
+        salience=0.9,
+    )
+
+    assert reader.vector_index_summary()["episodes"] == 0
+    reader._last_data_version = reader._data_version()
+    retrieved = reader.retrieve_similar(emb, top_k=1)
+
+    assert retrieved[0].id == episode_id
+    assert reader.vector_index_summary()["episodes"] == 1
+    assert reader.memory_storage_summary()["episodes"] == 1
+    writer.close()
+    reader.close()
+
+
 def test_procedural_memory_retrieves_similar_tool_pattern(tmp_path):
     memory = PersistentMemory(tmp_path / "memory.sqlite3", embedding_dim=4)
     emb = np.array([1, 0, 0, 0], dtype=np.float32)

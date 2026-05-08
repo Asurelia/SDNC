@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
+from zipfile import BadZipFile
 
 import numpy as np
 
@@ -176,24 +178,34 @@ class LocalCircuitLearner:
 
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        np.savez_compressed(
-            path,
-            circuit_keys=self.circuit_keys,
-            circuit_state=self.circuit_state,
-            usage_counts=self.usage_counts,
-            connection_weights=self.connection_weights,
-        )
+        tmp_path = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            with tmp_path.open("wb") as file:
+                np.savez_compressed(
+                    file,
+                    circuit_keys=self.circuit_keys,
+                    circuit_state=self.circuit_state,
+                    usage_counts=self.usage_counts,
+                    connection_weights=self.connection_weights,
+                )
+            tmp_path.replace(path)
+        finally:
+            if tmp_path.exists():
+                tmp_path.unlink(missing_ok=True)
 
     def load(self, path: Path) -> bool:
         if not path.exists():
             return False
-        data = np.load(path)
-        snapshot = PlasticitySnapshot(
-            circuit_keys=data["circuit_keys"].astype(np.float32),
-            circuit_state=data["circuit_state"].astype(np.float32),
-            usage_counts=data["usage_counts"].astype(np.float32),
-            connection_weights=data["connection_weights"].astype(np.float32),
-        )
+        try:
+            with np.load(path) as data:
+                snapshot = PlasticitySnapshot(
+                    circuit_keys=data["circuit_keys"].astype(np.float32),
+                    circuit_state=data["circuit_state"].astype(np.float32),
+                    usage_counts=data["usage_counts"].astype(np.float32),
+                    connection_weights=data["connection_weights"].astype(np.float32),
+                )
+        except (OSError, EOFError, ValueError, KeyError, BadZipFile):
+            return False
         if snapshot.circuit_keys.shape[1] != self.config.input_dim:
             return False
         if snapshot.circuit_keys.shape[0] > int(self.config.max_circuits or snapshot.circuit_keys.shape[0]):
