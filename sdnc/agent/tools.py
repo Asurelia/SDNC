@@ -207,13 +207,71 @@ class CalculatorTool:
         expression = self._extract_expression(query)
         if not expression:
             return ToolResult(self.name, False, "no arithmetic expression found")
-        value = _SafeEval().eval(expression)
-        return ToolResult(self.name, True, f"{expression} = {value}", {"value": value})
+        try:
+            value = _SafeEval().eval(expression)
+        except Exception as exc:
+            return ToolResult(self.name, False, f"invalid arithmetic expression: {exc}")
+        return ToolResult(self.name, True, f"{expression} = {_format_number(value)}", {"value": value})
 
     def _extract_expression(self, query: str) -> str:
         allowed = re.findall(r"[0-9+\-*/(). %]+", query)
-        expression = max((item.strip() for item in allowed), key=len, default="")
-        return expression.replace("%", "/100")
+        symbolic = [
+            item.strip()
+            for item in allowed
+            if re.search(r"\d", item) and re.search(r"[+\-*/%]", item)
+        ]
+        if symbolic:
+            expression = max(symbolic, key=len)
+            return expression.replace("%", "/100")
+        return self._extract_natural_expression(query)
+
+    def _extract_natural_expression(self, query: str) -> str:
+        lowered = query.lower()
+        numbers = [match.group(0).replace(",", ".") for match in re.finditer(r"\d+(?:[,.]\d+)?", lowered)]
+        if len(numbers) < 2:
+            return ""
+
+        subtract_markers = [
+            "donne",
+            "donner",
+            "mange",
+            "mangé",
+            "perd",
+            "perdu",
+            "retire",
+            "enleve",
+            "enlève",
+            "soustra",
+            "moins",
+            "reste",
+        ]
+        add_markers = [
+            "ajoute",
+            "ajouter",
+            "gagne",
+            "recois",
+            "reçois",
+            "recu",
+            "reçu",
+            "plus",
+            "addition",
+            "somme",
+        ]
+        multiply_markers = ["fois", "multiplie", "multiplié", "produit"]
+        divide_markers = ["divise", "divisé", "partage", "partagé", "moitié"]
+
+        operator_symbol = ""
+        if any(marker in lowered for marker in subtract_markers):
+            operator_symbol = "-"
+        elif any(marker in lowered for marker in add_markers):
+            operator_symbol = "+"
+        elif any(marker in lowered for marker in multiply_markers):
+            operator_symbol = "*"
+        elif any(marker in lowered for marker in divide_markers):
+            operator_symbol = "/"
+        if not operator_symbol:
+            return ""
+        return f"{numbers[0]} {operator_symbol} {numbers[1]}"
 
 
 class _DuckDuckGoParser(HTMLParser):
@@ -280,6 +338,12 @@ class _SafeEval:
         if isinstance(node, ast.UnaryOp) and type(node.op) in self.operators:
             return float(self.operators[type(node.op)](self._visit(node.operand)))
         raise ValueError("unsupported expression")
+
+
+def _format_number(value: float) -> str:
+    if float(value).is_integer():
+        return str(int(value))
+    return f"{value:.10g}"
 
 
 def tool_result_to_json(result: ToolResult) -> str:

@@ -56,6 +56,115 @@ def test_feedback_creates_procedural_tool_memory(tmp_path):
         system.close()
 
 
+def test_interaction_uses_learned_conversation_example(tmp_path):
+    config = AutonomousConfig(
+        input_dim=64,
+        n_circuits=40,
+        memory_path=tmp_path / "memory.sqlite3",
+        state_path=tmp_path / "state.npz",
+        workspace_root=tmp_path,
+        allow_web=False,
+    )
+    system = InteractionLearningSystem(config)
+    try:
+        system.memory.upsert_conversation_example(
+            source="fixture",
+            prompt="bonjour",
+            response="salut, je t'écoute",
+            embedding=system.encoder.encode("bonjour"),
+            confidence=0.9,
+        )
+
+        result = system.interact("bonjour", learn=False)
+
+        assert result.response == "salut, je t'écoute"
+        assert result.metadata["conversation_examples"][0]["response"] == "salut, je t'écoute"
+    finally:
+        system.close()
+
+
+def test_interaction_rejects_incompatible_conversation_example(tmp_path):
+    config = AutonomousConfig(
+        input_dim=64,
+        n_circuits=40,
+        memory_path=tmp_path / "memory.sqlite3",
+        state_path=tmp_path / "state.npz",
+        workspace_root=tmp_path,
+        allow_web=False,
+    )
+    system = InteractionLearningSystem(config)
+    try:
+        system.memory.upsert_conversation_example(
+            source="fixture",
+            prompt='Convertis la phrase "Bonjour, comment vas-tu ?" en espagnol.',
+            response="Hola, como estas?",
+            embedding=system.encoder.encode('Convertis la phrase "Bonjour, comment vas-tu ?" en espagnol.'),
+            confidence=0.9,
+        )
+
+        result = system.interact("Bonjour, comment vas-tu ?", learn=False)
+
+        assert result.response != "Hola, como estas?"
+        assert result.response.startswith("Salut")
+    finally:
+        system.close()
+
+
+def test_interaction_prefers_calculator_over_nearby_math_example(tmp_path):
+    config = AutonomousConfig(
+        input_dim=64,
+        n_circuits=40,
+        memory_path=tmp_path / "memory.sqlite3",
+        state_path=tmp_path / "state.npz",
+        workspace_root=tmp_path,
+        allow_web=False,
+    )
+    system = InteractionLearningSystem(config)
+    try:
+        system.memory.upsert_conversation_example(
+            source="fixture",
+            prompt="Si j'ai 3 pommes et j'en mange 2, combien m'en reste-t-il ?",
+            response="Il te reste 1 pomme.",
+            embedding=system.encoder.encode("Si j'ai 3 pommes et j'en mange 2, combien m'en reste-t-il ?"),
+            confidence=0.9,
+        )
+
+        result = system.interact("Si j'ai 3 pommes et que j'en donne 1, combien il m'en reste ?", learn=False)
+
+        assert "calculator" in result.metadata["tool_names"]
+        assert result.response == "3 - 1 = 2"
+    finally:
+        system.close()
+
+
+def test_interaction_forces_calculator_when_memory_is_confident(tmp_path):
+    config = AutonomousConfig(
+        input_dim=64,
+        n_circuits=40,
+        memory_path=tmp_path / "memory.sqlite3",
+        state_path=tmp_path / "state.npz",
+        workspace_root=tmp_path,
+        allow_web=False,
+    )
+    system = InteractionLearningSystem(config)
+    prompt = "Si j'ai 3 pommes et que j'en donne 1, combien il m'en reste ?"
+    try:
+        system.memory.store_episode(
+            text="ancienne réponse proche mais non fiable",
+            context={"kind": "near_math_memory"},
+            embedding=system.encoder.encode(prompt),
+            active_circuits=[1],
+            salience=0.9,
+        )
+
+        result = system.interact(prompt, learn=False)
+
+        assert "calculator" in result.metadata["tool_names"]
+        assert result.response == "3 - 1 = 2"
+    finally:
+        system.close()
+
+
 def test_direct_file_read_keeps_priority_under_tool_budget(tmp_path):
     fixture = tmp_path / "guided_fixture.md"
     fixture.write_text("MARQUEUR_LOCAL_TOOL_BUDGET: contenu lu par SDNC.", encoding="utf-8")

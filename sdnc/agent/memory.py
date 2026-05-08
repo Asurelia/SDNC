@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import sqlite3
 import threading
 import uuid
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 from time import time
 from typing import Any
@@ -69,6 +70,30 @@ class SourceStat:
     accepted: int
     rejected: int
     trust: float
+
+
+@dataclass
+class ConversationExampleRecord:
+    """A source-backed prompt -> response example for human conversation."""
+
+    id: str
+    key: str
+    timestamp: float
+    updated_at: float
+    source: str
+    prompt: str
+    response: str
+    embedding: np.ndarray
+    confidence: float
+    success_count: int
+    failure_count: int
+    payload: dict[str, Any]
+    similarity: float = 0.0
+
+    @property
+    def success_rate(self) -> float:
+        total = self.success_count + self.failure_count
+        return self.success_count / total if total else 0.5
 
 
 @dataclass
@@ -342,6 +367,30 @@ class _DenseVectorIndex:
         self.capacity = new_capacity
 
 
+@dataclass(frozen=True)
+class _IndexItem:
+    """Small hot metadata record for vector indexes.
+
+    Full SQLite rows stay cold and are fetched only for the few candidates that
+    win retrieval. This keeps large learned memories inspectable without loading
+    every prompt, response, context JSON, and feature payload into RAM.
+    """
+
+    id: str
+    confidence: float = 0.0
+    success_count: int = 0
+    failure_count: int = 0
+    salience: float = 0.0
+    observation_count: int = 0
+    status: str = ""
+    utility: float = 0.0
+
+    @property
+    def success_rate(self) -> float:
+        total = self.success_count + self.failure_count
+        return self.success_count / total if total else 0.5
+
+
 class PersistentMemory:
     """SQLite-backed episodic and procedural memory."""
 
@@ -355,6 +404,7 @@ class PersistentMemory:
         self._configure_connection()
         self._init_schema()
         self._episode_index = _DenseVectorIndex(self.embedding_dim)
+        self._conversation_index = _DenseVectorIndex(self.embedding_dim)
         self._sensory_binding_index = _DenseVectorIndex(self.embedding_dim)
         self._sensory_prototype_index = _DenseVectorIndex(self.embedding_dim)
         self._procedure_index = _DenseVectorIndex(self.embedding_dim)
@@ -376,6 +426,7 @@ class PersistentMemory:
         with self._lock:
             return {
                 "episodes": self._episode_index.count,
+                "conversation_examples": self._conversation_index.count,
                 "sensory_bindings": self._sensory_binding_index.count,
                 "sensory_prototypes": self._sensory_prototype_index.count,
                 "procedures": self._procedure_index.count,
@@ -387,6 +438,7 @@ class PersistentMemory:
         with self._lock:
             tables = {
                 "episodes": "episodes",
+                "conversation_examples": "conversation_examples",
                 "sensory_bindings": "sensory_bindings",
                 "sensory_prototypes": "sensory_prototypes",
                 "procedures": "procedures",
@@ -410,6 +462,7 @@ class PersistentMemory:
     def _load_vector_indexes(self) -> None:
         with self._lock:
             self._episode_index.reset()
+            self._conversation_index.reset()
             self._sensory_binding_index.reset()
             self._sensory_prototype_index.reset()
             self._procedure_index.reset()
@@ -417,89 +470,149 @@ class PersistentMemory:
             self._expert_index.reset()
             self._reset_index_watermarks()
 
-            for row in self.conn.execute("SELECT * FROM episodes").fetchall():
+            for row in self.conn.execute("SELECT id, timestamp, embedding, salience FROM episodes"):
                 embedding = self._unpack_vector(row["embedding"])
-                self._episode_index.add(row["id"], embedding, self._row_to_memory(row, embedding, 0.0))
+                self._episode_index.add(row["id"], embedding, _index_item_from_row("episodes", row))
                 self._remember_index_watermark("episodes", row["timestamp"])
-            for row in self.conn.execute("SELECT * FROM sensory_bindings").fetchall():
+            for row in self.conn.execute(
+                """
+                SELECT id, updated_at, embedding, confidence, success_count, failure_count
+                FROM conversation_examples
+                """
+            ):
+                embedding = self._unpack_vector(row["embedding"])
+                self._conversation_index.add(
+                    row["id"],
+                    embedding,
+                    _index_item_from_row("conversation_examples", row),
+                )
+                self._remember_index_watermark("conversation_examples", row["updated_at"])
+            for row in self.conn.execute("SELECT id, timestamp, embedding, salience FROM sensory_bindings"):
                 embedding = self._unpack_vector(row["embedding"])
                 self._sensory_binding_index.add(
                     row["id"],
                     embedding,
-                    self._row_to_sensory_binding(row, embedding, 0.0),
+                    _index_item_from_row("sensory_bindings", row),
                 )
                 self._remember_index_watermark("sensory_bindings", row["timestamp"])
-            for row in self.conn.execute("SELECT * FROM sensory_prototypes").fetchall():
+            for row in self.conn.execute(
+                """
+                SELECT id, updated_at, centroid_embedding, confidence, observation_count
+                FROM sensory_prototypes
+                """
+            ):
                 embedding = self._unpack_vector(row["centroid_embedding"])
                 self._sensory_prototype_index.add(
                     row["id"],
                     embedding,
-                    self._row_to_sensory_prototype(row, embedding, 0.0),
+                    _index_item_from_row("sensory_prototypes", row),
                 )
                 self._remember_index_watermark("sensory_prototypes", row["updated_at"])
-            for row in self.conn.execute("SELECT * FROM procedures").fetchall():
+            for row in self.conn.execute(
+                "SELECT id, last_used, trigger_embedding, success_count, failure_count FROM procedures"
+            ):
                 embedding = self._unpack_vector(row["trigger_embedding"])
-                self._procedure_index.add(row["id"], embedding, self._row_to_procedure(row, embedding, 0.0))
+                self._procedure_index.add(row["id"], embedding, _index_item_from_row("procedures", row))
                 self._remember_index_watermark("procedures", row["last_used"])
-            for row in self.conn.execute("SELECT * FROM rules").fetchall():
+            for row in self.conn.execute(
+                "SELECT id, updated_at, trigger_embedding, confidence, status FROM rules"
+            ):
                 embedding = self._unpack_vector(row["trigger_embedding"])
-                self._rule_index.add(row["id"], embedding, self._row_to_rule(row, embedding, 0.0))
+                self._rule_index.add(row["id"], embedding, _index_item_from_row("rules", row))
                 self._remember_index_watermark("rules", row["updated_at"])
-            for row in self.conn.execute("SELECT * FROM experts").fetchall():
+            for row in self.conn.execute(
+                "SELECT id, updated_at, trigger_embedding, utility, status FROM experts"
+            ):
                 embedding = self._unpack_vector(row["trigger_embedding"])
-                self._expert_index.add(row["id"], embedding, self._row_to_expert(row, embedding, 0.0))
+                self._expert_index.add(row["id"], embedding, _index_item_from_row("experts", row))
                 self._remember_index_watermark("experts", row["updated_at"])
 
     def _refresh_vector_indexes_incremental(self) -> None:
         for row in self.conn.execute(
-            "SELECT * FROM episodes WHERE timestamp >= ? ORDER BY timestamp",
+            "SELECT id, timestamp, embedding, salience FROM episodes WHERE timestamp >= ? ORDER BY timestamp",
             (self._index_watermarks["episodes"],),
-        ).fetchall():
+        ):
             embedding = self._unpack_vector(row["embedding"])
-            self._episode_index.add(row["id"], embedding, self._row_to_memory(row, embedding, 0.0))
+            self._episode_index.add(row["id"], embedding, _index_item_from_row("episodes", row))
             self._remember_index_watermark("episodes", row["timestamp"])
         for row in self.conn.execute(
-            "SELECT * FROM sensory_bindings WHERE timestamp >= ? ORDER BY timestamp",
+            """
+            SELECT id, updated_at, embedding, confidence, success_count, failure_count
+            FROM conversation_examples
+            WHERE updated_at >= ?
+            ORDER BY updated_at
+            """,
+            (self._index_watermarks["conversation_examples"],),
+        ):
+            embedding = self._unpack_vector(row["embedding"])
+            self._conversation_index.add(
+                row["id"],
+                embedding,
+                _index_item_from_row("conversation_examples", row),
+            )
+            self._remember_index_watermark("conversation_examples", row["updated_at"])
+        for row in self.conn.execute(
+            "SELECT id, timestamp, embedding, salience FROM sensory_bindings WHERE timestamp >= ? ORDER BY timestamp",
             (self._index_watermarks["sensory_bindings"],),
-        ).fetchall():
+        ):
             embedding = self._unpack_vector(row["embedding"])
             self._sensory_binding_index.add(
                 row["id"],
                 embedding,
-                self._row_to_sensory_binding(row, embedding, 0.0),
+                _index_item_from_row("sensory_bindings", row),
             )
             self._remember_index_watermark("sensory_bindings", row["timestamp"])
         for row in self.conn.execute(
-            "SELECT * FROM sensory_prototypes WHERE updated_at >= ? ORDER BY updated_at",
+            """
+            SELECT id, updated_at, centroid_embedding, confidence, observation_count
+            FROM sensory_prototypes
+            WHERE updated_at >= ?
+            ORDER BY updated_at
+            """,
             (self._index_watermarks["sensory_prototypes"],),
-        ).fetchall():
+        ):
             embedding = self._unpack_vector(row["centroid_embedding"])
             self._sensory_prototype_index.add(
                 row["id"],
                 embedding,
-                self._row_to_sensory_prototype(row, embedding, 0.0),
+                _index_item_from_row("sensory_prototypes", row),
             )
             self._remember_index_watermark("sensory_prototypes", row["updated_at"])
         for row in self.conn.execute(
-            "SELECT * FROM procedures WHERE last_used >= ? ORDER BY last_used",
+            """
+            SELECT id, last_used, trigger_embedding, success_count, failure_count
+            FROM procedures
+            WHERE last_used >= ?
+            ORDER BY last_used
+            """,
             (self._index_watermarks["procedures"],),
-        ).fetchall():
+        ):
             embedding = self._unpack_vector(row["trigger_embedding"])
-            self._procedure_index.add(row["id"], embedding, self._row_to_procedure(row, embedding, 0.0))
+            self._procedure_index.add(row["id"], embedding, _index_item_from_row("procedures", row))
             self._remember_index_watermark("procedures", row["last_used"])
         for row in self.conn.execute(
-            "SELECT * FROM rules WHERE updated_at >= ? ORDER BY updated_at",
+            """
+            SELECT id, updated_at, trigger_embedding, confidence, status
+            FROM rules
+            WHERE updated_at >= ?
+            ORDER BY updated_at
+            """,
             (self._index_watermarks["rules"],),
-        ).fetchall():
+        ):
             embedding = self._unpack_vector(row["trigger_embedding"])
-            self._rule_index.add(row["id"], embedding, self._row_to_rule(row, embedding, 0.0))
+            self._rule_index.add(row["id"], embedding, _index_item_from_row("rules", row))
             self._remember_index_watermark("rules", row["updated_at"])
         for row in self.conn.execute(
-            "SELECT * FROM experts WHERE updated_at >= ? ORDER BY updated_at",
+            """
+            SELECT id, updated_at, trigger_embedding, utility, status
+            FROM experts
+            WHERE updated_at >= ?
+            ORDER BY updated_at
+            """,
             (self._index_watermarks["experts"],),
-        ).fetchall():
+        ):
             embedding = self._unpack_vector(row["trigger_embedding"])
-            self._expert_index.add(row["id"], embedding, self._row_to_expert(row, embedding, 0.0))
+            self._expert_index.add(row["id"], embedding, _index_item_from_row("experts", row))
             self._remember_index_watermark("experts", row["updated_at"])
 
     def _maybe_refresh_vector_indexes(self) -> None:
@@ -517,6 +630,7 @@ class PersistentMemory:
     def _reset_index_watermarks(self) -> None:
         self._index_watermarks = {
             "episodes": 0.0,
+            "conversation_examples": 0.0,
             "sensory_bindings": 0.0,
             "sensory_prototypes": 0.0,
             "procedures": 0.0,
@@ -530,6 +644,7 @@ class PersistentMemory:
     def _storage_watermarks(self) -> dict[str, float]:
         queries = {
             "episodes": "SELECT COALESCE(MAX(timestamp), 0) FROM episodes",
+            "conversation_examples": "SELECT COALESCE(MAX(updated_at), 0) FROM conversation_examples",
             "sensory_bindings": "SELECT COALESCE(MAX(timestamp), 0) FROM sensory_bindings",
             "sensory_prototypes": "SELECT COALESCE(MAX(updated_at), 0) FROM sensory_prototypes",
             "procedures": "SELECT COALESCE(MAX(last_used), 0) FROM procedures",
@@ -586,18 +701,7 @@ class PersistentMemory:
             self._episode_index.add(
                 episode_id,
                 embedding,
-                MemoryRecord(
-                    id=episode_id,
-                    timestamp=now,
-                    text=text,
-                    context=dict(context),
-                    embedding=np.asarray(embedding, dtype=np.float32).copy(),
-                    active_circuits=list(active_circuits),
-                    salience=float(salience),
-                    outcome=outcome,
-                    feedback_score=feedback_score,
-                    similarity=0.0,
-                ),
+                _IndexItem(id=episode_id, salience=float(salience)),
             )
             self._remember_index_watermark("episodes", now)
         return episode_id
@@ -609,22 +713,153 @@ class PersistentMemory:
                 (float(feedback_score), outcome, episode_id),
             )
             self.conn.commit()
-            pos = self._episode_index.positions.get(episode_id)
-            if pos is not None:
-                current = self._episode_index.items[pos]
-                self._episode_index.items[pos] = replace(
-                    current,
-                    feedback_score=float(feedback_score),
-                    outcome=outcome,
-                )
 
     def retrieve_similar(self, embedding: np.ndarray, top_k: int = 5) -> list[MemoryRecord]:
         self._maybe_refresh_vector_indexes()
         with self._lock:
+            matches = self._episode_index.query(embedding, top_k)
+            rows = self._rows_by_ids("episodes", [item.id for item, _ in matches])
             return [
-                replace(record, similarity=similarity)
-                for record, similarity in self._episode_index.query(embedding, top_k)
+                self._row_to_memory(row, self._unpack_vector(row["embedding"]), similarity)
+                for item, similarity in matches
+                if (row := rows.get(item.id)) is not None
             ]
+
+    def upsert_conversation_example(
+        self,
+        source: str,
+        prompt: str,
+        response: str,
+        embedding: np.ndarray,
+        confidence: float = 0.7,
+        payload: dict[str, Any] | None = None,
+    ) -> str:
+        """Persist a source-backed conversation example for response synthesis."""
+
+        prompt = " ".join(str(prompt or "").split())
+        response = " ".join(str(response or "").split())
+        if not prompt or not response:
+            return ""
+        payload = payload or {}
+        now = time()
+        key = _conversation_key(source, prompt, response)
+        with self._lock:
+            existing = self.conn.execute(
+                "SELECT * FROM conversation_examples WHERE key = ?",
+                (key,),
+            ).fetchone()
+            if existing is None:
+                example_id = str(uuid.uuid4())
+                self.conn.execute(
+                    """
+                    INSERT INTO conversation_examples
+                        (id, key, timestamp, updated_at, source, prompt, response,
+                         embedding, confidence, success_count, failure_count, payload_json)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        example_id,
+                        key,
+                        now,
+                        now,
+                        source,
+                        prompt,
+                        response,
+                        self._pack_vector(embedding),
+                        float(max(0.0, min(1.0, confidence))),
+                        0,
+                        0,
+                        json.dumps(payload, sort_keys=True, default=str),
+                    ),
+                )
+            else:
+                example_id = existing["id"]
+                merged_payload = {
+                    **json.loads(existing["payload_json"] or "{}"),
+                    **payload,
+                }
+                self.conn.execute(
+                    """
+                    UPDATE conversation_examples
+                    SET updated_at = ?, confidence = ?, payload_json = ?
+                    WHERE key = ?
+                    """,
+                    (
+                        now,
+                        max(float(existing["confidence"]), float(max(0.0, min(1.0, confidence)))),
+                        json.dumps(merged_payload, sort_keys=True, default=str),
+                        key,
+                    ),
+                )
+            self.conn.commit()
+            row = self.conn.execute("SELECT * FROM conversation_examples WHERE id = ?", (example_id,)).fetchone()
+            example_embedding = self._unpack_vector(row["embedding"])
+            self._conversation_index.add(
+                example_id,
+                example_embedding,
+                _index_item_from_row("conversation_examples", row),
+            )
+            self._remember_index_watermark("conversation_examples", row["updated_at"])
+        return example_id
+
+    def retrieve_conversation_examples(
+        self,
+        embedding: np.ndarray,
+        top_k: int = 5,
+        min_confidence: float = 0.0,
+    ) -> list[ConversationExampleRecord]:
+        self._maybe_refresh_vector_indexes()
+        with self._lock:
+            matches = self._conversation_index.query(
+                embedding,
+                top_k,
+                filter_fn=lambda item: item.confidence >= min_confidence,
+                ranking_fn=lambda item, sim: (
+                    sim * 0.72 + item.confidence * 0.18 + item.success_rate * 0.10
+                ),
+                min_candidates=512,
+            )
+            rows = self._rows_by_ids("conversation_examples", [item.id for item, _ in matches])
+            return [
+                self._row_to_conversation_example(
+                    row,
+                    self._unpack_vector(row["embedding"]),
+                    similarity,
+                )
+                for item, similarity in matches
+                if (row := rows.get(item.id)) is not None
+            ]
+
+    def record_conversation_feedback(self, example_id: str, success: bool) -> None:
+        now = time()
+        with self._lock:
+            self.conn.execute(
+                """
+                UPDATE conversation_examples
+                SET success_count = success_count + ?,
+                    failure_count = failure_count + ?,
+                    confidence = max(0.0, min(1.0, confidence + ?)),
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    1 if success else 0,
+                    0 if success else 1,
+                    0.04 if success else -0.08,
+                    now,
+                    example_id,
+                ),
+            )
+            self.conn.commit()
+            row = self.conn.execute("SELECT * FROM conversation_examples WHERE id = ?", (example_id,)).fetchone()
+            if row is not None:
+                embedding = self._unpack_vector(row["embedding"])
+                self._conversation_index.add(
+                    example_id,
+                    embedding,
+                    _index_item_from_row("conversation_examples", row),
+                )
+                self._remember_index_watermark("conversation_examples", row["updated_at"])
 
     def recent(self, limit: int = 10) -> list[MemoryRecord]:
         with self._lock:
@@ -708,19 +943,22 @@ class PersistentMemory:
             self.conn.commit()
             row = self.conn.execute("SELECT * FROM procedures WHERE name = ?", (name,)).fetchone()
             trigger = self._unpack_vector(row["trigger_embedding"])
-            self._procedure_index.add(row["id"], trigger, self._row_to_procedure(row, trigger, 0.0))
+            self._procedure_index.add(row["id"], trigger, _index_item_from_row("procedures", row))
             self._remember_index_watermark("procedures", row["last_used"])
 
     def retrieve_procedures(self, embedding: np.ndarray, top_k: int = 5) -> list[ProcedureRecord]:
         self._maybe_refresh_vector_indexes()
         with self._lock:
+            matches = self._procedure_index.query(
+                embedding,
+                top_k,
+                ranking_fn=lambda item, sim: sim + item.success_rate,
+            )
+            rows = self._rows_by_ids("procedures", [item.id for item, _ in matches])
             return [
-                replace(procedure, similarity=similarity)
-                for procedure, similarity in self._procedure_index.query(
-                    embedding,
-                    top_k,
-                    ranking_fn=lambda item, sim: sim + item.success_rate,
-                )
+                self._row_to_procedure(row, self._unpack_vector(row["trigger_embedding"]), similarity)
+                for item, similarity in matches
+                if (row := rows.get(item.id)) is not None
             ]
 
     def list_procedures(self) -> list[ProcedureRecord]:
@@ -829,7 +1067,7 @@ class PersistentMemory:
             self.conn.commit()
             row = self.conn.execute("SELECT * FROM rules WHERE id = ?", (rule_id,)).fetchone()
             trigger = self._unpack_vector(row["trigger_embedding"])
-            self._rule_index.add(rule_id, trigger, self._row_to_rule(row, trigger, 0.0))
+            self._rule_index.add(rule_id, trigger, _index_item_from_row("rules", row))
         return rule_id
 
     def record_rule_evidence(
@@ -874,7 +1112,7 @@ class PersistentMemory:
             row = self.conn.execute("SELECT * FROM rules WHERE id = ?", (rule_id,)).fetchone()
             if row is not None:
                 trigger = self._unpack_vector(row["trigger_embedding"])
-                self._rule_index.add(rule_id, trigger, self._row_to_rule(row, trigger, 0.0))
+                self._rule_index.add(rule_id, trigger, _index_item_from_row("rules", row))
                 self._remember_index_watermark("rules", row["updated_at"])
 
     def retrieve_rules(
@@ -886,14 +1124,17 @@ class PersistentMemory:
         self._maybe_refresh_vector_indexes()
         status_set = set(statuses)
         with self._lock:
+            matches = self._rule_index.query(
+                embedding,
+                top_k,
+                filter_fn=lambda item: item.status in status_set,
+                ranking_fn=lambda item, sim: sim * 0.55 + item.confidence * 0.45,
+            )
+            rows = self._rows_by_ids("rules", [item.id for item, _ in matches])
             return [
-                replace(rule, similarity=similarity)
-                for rule, similarity in self._rule_index.query(
-                    embedding,
-                    top_k,
-                    filter_fn=lambda item: item.status in status_set,
-                    ranking_fn=lambda item, sim: sim * 0.55 + item.confidence * 0.45,
-                )
+                self._row_to_rule(row, self._unpack_vector(row["trigger_embedding"]), similarity)
+                for item, similarity in matches
+                if (row := rows.get(item.id)) is not None
             ]
 
     def list_rules(self, status: str | None = None) -> list[RuleRecord]:
@@ -937,7 +1178,7 @@ class PersistentMemory:
             updated = self.conn.execute("SELECT * FROM rules WHERE id = ?", (rule_id,)).fetchone()
             embedding = self._unpack_vector(updated["trigger_embedding"])
             record = self._row_to_rule(updated, embedding, 0.0)
-            self._rule_index.add(rule_id, embedding, record)
+            self._rule_index.add(rule_id, embedding, _index_item_from_row("rules", updated))
             self._remember_index_watermark("rules", updated["updated_at"])
         return record
 
@@ -1338,7 +1579,7 @@ class PersistentMemory:
                 context=dict(context),
                 similarity=0.0,
             )
-            self._sensory_binding_index.add(event_id, embedding, record)
+            self._sensory_binding_index.add(event_id, embedding, _IndexItem(id=event_id, salience=float(salience)))
             self._remember_index_watermark("sensory_bindings", now)
         return event_id
 
@@ -1360,13 +1601,16 @@ class PersistentMemory:
     ) -> list[SensoryBindingRecord]:
         self._maybe_refresh_vector_indexes()
         with self._lock:
+            matches = self._sensory_binding_index.query(
+                embedding,
+                top_k,
+                ranking_fn=lambda item, sim: sim + item.salience,
+            )
+            rows = self._rows_by_ids("sensory_bindings", [item.id for item, _ in matches])
             return [
-                replace(binding, similarity=similarity)
-                for binding, similarity in self._sensory_binding_index.query(
-                    embedding,
-                    top_k,
-                    ranking_fn=lambda item, sim: sim + item.salience,
-                )
+                self._row_to_sensory_binding(row, self._unpack_vector(row["embedding"]), similarity)
+                for item, similarity in matches
+                if (row := rows.get(item.id)) is not None
             ]
 
     def upsert_sensory_prototype(
@@ -1458,7 +1702,7 @@ class PersistentMemory:
             self._sensory_prototype_index.add(
                 prototype_id,
                 centroid,
-                self._row_to_sensory_prototype(row, centroid, 0.0),
+                _index_item_from_row("sensory_prototypes", row),
             )
             self._remember_index_watermark("sensory_prototypes", row["updated_at"])
         return prototype_id
@@ -1470,16 +1714,23 @@ class PersistentMemory:
     ) -> list[SensoryPrototypeRecord]:
         self._maybe_refresh_vector_indexes()
         with self._lock:
+            matches = self._sensory_prototype_index.query(
+                embedding,
+                top_k,
+                ranking_fn=lambda item, sim: (
+                    sim * 0.6 + item.confidence * 0.25 + min(item.observation_count, 10) * 0.015
+                ),
+                min_candidates=512,
+            )
+            rows = self._rows_by_ids("sensory_prototypes", [item.id for item, _ in matches])
             return [
-                replace(prototype, similarity=similarity)
-                for prototype, similarity in self._sensory_prototype_index.query(
-                    embedding,
-                    top_k,
-                    ranking_fn=lambda item, sim: (
-                        sim * 0.6 + item.confidence * 0.25 + min(item.observation_count, 10) * 0.015
-                    ),
-                    min_candidates=512,
+                self._row_to_sensory_prototype(
+                    row,
+                    self._unpack_vector(row["centroid_embedding"]),
+                    similarity,
                 )
+                for item, similarity in matches
+                if (row := rows.get(item.id)) is not None
             ]
 
     def recent_sensory_prototypes(self, limit: int = 20) -> list[SensoryPrototypeRecord]:
@@ -1831,7 +2082,7 @@ class PersistentMemory:
             self.conn.commit()
             row = self.conn.execute("SELECT * FROM experts WHERE id = ?", (expert_id,)).fetchone()
             embedding = self._unpack_vector(row["trigger_embedding"])
-            self._expert_index.add(expert_id, embedding, self._row_to_expert(row, embedding, 0.0))
+            self._expert_index.add(expert_id, embedding, _index_item_from_row("experts", row))
             self._remember_index_watermark("experts", row["updated_at"])
         return expert_id
 
@@ -1858,7 +2109,7 @@ class PersistentMemory:
             row = self.conn.execute("SELECT * FROM experts WHERE id = ?", (expert_id,)).fetchone()
             if row is not None:
                 embedding = self._unpack_vector(row["trigger_embedding"])
-                self._expert_index.add(expert_id, embedding, self._row_to_expert(row, embedding, 0.0))
+                self._expert_index.add(expert_id, embedding, _index_item_from_row("experts", row))
                 self._remember_index_watermark("experts", row["updated_at"])
 
     def set_expert_residency(self, expert_id: str, hot: bool, status: str | None = None) -> None:
@@ -1877,7 +2128,7 @@ class PersistentMemory:
             row = self.conn.execute("SELECT * FROM experts WHERE id = ?", (expert_id,)).fetchone()
             if row is not None:
                 embedding = self._unpack_vector(row["trigger_embedding"])
-                self._expert_index.add(expert_id, embedding, self._row_to_expert(row, embedding, 0.0))
+                self._expert_index.add(expert_id, embedding, _index_item_from_row("experts", row))
                 self._remember_index_watermark("experts", row["updated_at"])
 
     def list_experts(self, status: str | None = None) -> list[ExpertRecord]:
@@ -1900,14 +2151,17 @@ class PersistentMemory:
         self._maybe_refresh_vector_indexes()
         status_set = set(statuses)
         with self._lock:
+            matches = self._expert_index.query(
+                embedding,
+                top_k,
+                filter_fn=lambda item: item.status in status_set,
+                ranking_fn=lambda item, sim: sim * 0.65 + item.utility * 0.35,
+            )
+            rows = self._rows_by_ids("experts", [item.id for item, _ in matches])
             return [
-                replace(expert, similarity=similarity)
-                for expert, similarity in self._expert_index.query(
-                    embedding,
-                    top_k,
-                    filter_fn=lambda item: item.status in status_set,
-                    ranking_fn=lambda item, sim: sim * 0.65 + item.utility * 0.35,
-                )
+                self._row_to_expert(row, self._unpack_vector(row["trigger_embedding"]), similarity)
+                for item, similarity in matches
+                if (row := rows.get(item.id)) is not None
             ]
 
     def append_event(
@@ -1991,6 +2245,21 @@ class PersistentMemory:
                 success_count INTEGER NOT NULL DEFAULT 0,
                 failure_count INTEGER NOT NULL DEFAULT 0,
                 last_used REAL NOT NULL,
+                payload_json TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS conversation_examples (
+                id TEXT PRIMARY KEY,
+                key TEXT UNIQUE NOT NULL,
+                timestamp REAL NOT NULL,
+                updated_at REAL NOT NULL,
+                source TEXT NOT NULL,
+                prompt TEXT NOT NULL,
+                response TEXT NOT NULL,
+                embedding BLOB NOT NULL,
+                confidence REAL NOT NULL,
+                success_count INTEGER NOT NULL DEFAULT 0,
+                failure_count INTEGER NOT NULL DEFAULT 0,
                 payload_json TEXT NOT NULL
             );
 
@@ -2184,6 +2453,12 @@ class PersistentMemory:
                 ON procedures(name);
             CREATE INDEX IF NOT EXISTS idx_procedures_last_used
                 ON procedures(last_used DESC);
+            CREATE INDEX IF NOT EXISTS idx_conversation_examples_updated_at
+                ON conversation_examples(updated_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_conversation_examples_source
+                ON conversation_examples(source);
+            CREATE INDEX IF NOT EXISTS idx_conversation_examples_confidence
+                ON conversation_examples(confidence DESC);
             CREATE INDEX IF NOT EXISTS idx_sync_events_timestamp
                 ON sync_events(timestamp DESC);
             CREATE INDEX IF NOT EXISTS idx_sync_events_type
@@ -2258,6 +2533,28 @@ class PersistentMemory:
     def _unpack_vector(self, blob: bytes) -> np.ndarray:
         return np.frombuffer(blob, dtype=np.float32).copy()
 
+    def _rows_by_ids(self, table: str, ids: list[str]) -> dict[str, sqlite3.Row]:
+        allowed = {
+            "episodes",
+            "conversation_examples",
+            "procedures",
+            "rules",
+            "sensory_bindings",
+            "sensory_prototypes",
+            "experts",
+        }
+        if table not in allowed:
+            raise ValueError(f"unsupported table for indexed lookup: {table}")
+        ordered_ids = [str(item_id) for item_id in ids if item_id]
+        if not ordered_ids:
+            return {}
+        placeholders = ",".join("?" for _ in ordered_ids)
+        rows = self.conn.execute(
+            f"SELECT * FROM {table} WHERE id IN ({placeholders})",
+            ordered_ids,
+        ).fetchall()
+        return {row["id"]: row for row in rows}
+
     def _row_to_memory(self, row: sqlite3.Row, embedding: np.ndarray, similarity: float) -> MemoryRecord:
         return MemoryRecord(
             id=row["id"],
@@ -2279,6 +2576,28 @@ class PersistentMemory:
             description=row["description"],
             tool_name=row["tool_name"],
             trigger_embedding=embedding,
+            success_count=int(row["success_count"]),
+            failure_count=int(row["failure_count"]),
+            payload=json.loads(row["payload_json"] or "{}"),
+            similarity=similarity,
+        )
+
+    def _row_to_conversation_example(
+        self,
+        row: sqlite3.Row,
+        embedding: np.ndarray,
+        similarity: float,
+    ) -> ConversationExampleRecord:
+        return ConversationExampleRecord(
+            id=row["id"],
+            key=row["key"],
+            timestamp=float(row["timestamp"]),
+            updated_at=float(row["updated_at"]),
+            source=row["source"],
+            prompt=row["prompt"],
+            response=row["response"],
+            embedding=embedding,
+            confidence=float(row["confidence"]),
             success_count=int(row["success_count"]),
             failure_count=int(row["failure_count"]),
             payload=json.loads(row["payload_json"] or "{}"),
@@ -2458,6 +2777,50 @@ def _unit_vector(vector: np.ndarray, dim: int) -> np.ndarray:
     if vector.shape != (dim,):
         raise ValueError(f"expected vector shape {(dim,)}, got {vector.shape}")
     return vector / max(float(np.linalg.norm(vector)), 1e-8)
+
+
+def _index_item_from_row(kind: str, row: sqlite3.Row) -> _IndexItem:
+    if kind == "conversation_examples":
+        return _IndexItem(
+            id=row["id"],
+            confidence=float(row["confidence"]),
+            success_count=int(row["success_count"]),
+            failure_count=int(row["failure_count"]),
+        )
+    if kind == "procedures":
+        return _IndexItem(
+            id=row["id"],
+            success_count=int(row["success_count"]),
+            failure_count=int(row["failure_count"]),
+        )
+    if kind == "rules":
+        return _IndexItem(id=row["id"], confidence=float(row["confidence"]), status=row["status"])
+    if kind == "experts":
+        return _IndexItem(id=row["id"], utility=float(row["utility"]), status=row["status"])
+    if kind == "sensory_bindings":
+        return _IndexItem(id=row["id"], salience=float(row["salience"]))
+    if kind == "sensory_prototypes":
+        return _IndexItem(
+            id=row["id"],
+            confidence=float(row["confidence"]),
+            observation_count=int(row["observation_count"]),
+        )
+    if kind == "episodes":
+        return _IndexItem(id=row["id"], salience=float(row["salience"]))
+    return _IndexItem(id=row["id"])
+
+
+def _conversation_key(source: str, prompt: str, response: str) -> str:
+    payload = json.dumps(
+        {
+            "source": source,
+            "prompt": prompt,
+            "response": response,
+        },
+        sort_keys=True,
+        ensure_ascii=False,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def _dedupe_strings(values: list[str]) -> list[str]:

@@ -26,7 +26,7 @@ from sdnc.agent.encoding import HashingExperienceEncoder
 from sdnc.agent.expert_atlas import payload_summary
 from sdnc.agent.experts import ExpertManager
 from sdnc.agent.learning import LearningCycleReport, SelfDirectedLearner
-from sdnc.agent.memory import PersistentMemory, TrainingFileRecord
+from sdnc.agent.memory import ConversationExampleRecord, PersistentMemory, TrainingFileRecord
 from sdnc.agent.multimodal import (
     AUDIO_EXTENSIONS,
     IMAGE_EXTENSIONS,
@@ -157,6 +157,11 @@ class InteractionLearningSystem:
         expert_report = self.expert_manager.select_for_interaction(embedding, budget)
         activation = self.learner.activate(embedding)
         memories = self.memory.retrieve_similar(embedding, top_k=budget.memory_top_k)
+        conversation_examples = self.memory.retrieve_conversation_examples(
+            self.encoder.encode(text),
+            top_k=max(5, budget.memory_top_k),
+            min_confidence=0.2,
+        )
         rule_matches = self.rule_engine.match(embedding, top_k=5)
 
         tool_names = self._choose_tools(
@@ -182,11 +187,13 @@ class InteractionLearningSystem:
             hot_expert_count=len(expert_report.selected_hot),
         )
         planned_tool_names = self._tool_names_for_plan(tool_names, action_plan, mode=budget.mode)
+        planned_tool_names = self._ensure_required_tools(text, tool_names, planned_tool_names)
         tool_context = {
             **enriched_context,
             "embedding": embedding,
             "active_circuits": activation.indices,
             "memories": memories,
+            "conversation_examples": conversation_examples,
             "context_packet": context_packet,
             "cognitive_budget": budget,
             "cognitive_workspace": workspace,
@@ -261,7 +268,14 @@ class InteractionLearningSystem:
         else:
             improvement_report = None
 
-        response = self._synthesize_response(text, activation, memories, tool_results, salience)
+        response = self._synthesize_response(
+            text,
+            activation,
+            memories,
+            conversation_examples,
+            tool_results,
+            salience,
+        )
         result = InteractionResult(
             episode_id=episode_id,
             timestamp=time(),
@@ -281,6 +295,7 @@ class InteractionLearningSystem:
                 "context_lod": _context_payload(context_packet),
                 "resource_budget": _resource_payload(resource_snapshot),
                 "expert_lifecycle": _expert_report_payload(expert_report),
+                "conversation_examples": _conversation_examples_payload(conversation_examples),
                 "neuro_symbolic_rules": _rule_matches_payload(rule_matches),
                 "rule_attachments": {"expert_links": expert_rule_link_count},
                 "cognitive_core": _cognitive_workspace_payload(workspace),
@@ -1327,7 +1342,7 @@ class InteractionLearningSystem:
         if self.config.allow_web and (question_like or activation_confidence < self.config.confidence_threshold):
             selected.append("web_search")
 
-        if re.search(r"\d+\s*[-+*/%]\s*\d+", text):
+        if _looks_like_math(text):
             selected.append("calculator")
 
         for procedure in self.memory.retrieve_procedures(embedding, top_k=3):
@@ -1368,6 +1383,21 @@ class InteractionLearningSystem:
         else:
             selected = []
         return [name for name in selected if name in proposed and self.registry.get(name) is not None]
+
+    def _ensure_required_tools(
+        self,
+        text: str,
+        proposed: list[str],
+        planned: list[str],
+    ) -> list[str]:
+        required: list[str] = []
+        if _looks_like_math(text) and "calculator" in proposed:
+            required.append("calculator")
+        merged = list(planned)
+        for name in required:
+            if name not in merged and self.registry.get(name) is not None:
+                merged.append(name)
+        return merged
 
     def _maybe_self_improve(self) -> ImprovementReport | None:
         if not self.config.auto_improve_enabled:
@@ -1422,9 +1452,54 @@ class InteractionLearningSystem:
         text: str,
         activation,
         memories: list[MemoryRecord],
+        conversation_examples: list[ConversationExampleRecord],
         tool_results: list[ToolResult],
         salience: float,
     ) -> str:
+        for result in tool_results:
+            if result.success and result.tool_name == "calculator":
+                return result.content.strip()
+
+        normalized_input = _normalized_text(text)
+        if conversation_examples:
+            for example in conversation_examples:
+                if _normalized_text(example.prompt) == normalized_input:
+                    return example.response
+            compatible_examples = [
+                example
+                for example in conversation_examples
+                if _conversation_example_is_compatible(text, example)
+            ]
+            if compatible_examples:
+                best = compatible_examples[0]
+                if best.similarity >= _conversation_similarity_threshold(text, best):
+                    return best.response
+
+        intent = _response_intent(text)
+        if intent == "greeting":
+            return "Salut, je suis là. Je peux apprendre avec tes exemples, tes fichiers et tes retours."
+        if intent == "translation":
+            return (
+                "Je reconnais une demande de traduction, mais je n'ai pas encore trouvé "
+                "un exemple assez compatible pour répondre sans inventer."
+            )
+        if intent == "math":
+            return "Je reconnais un problème de calcul, mais mon outil n'a pas encore produit de résultat fiable."
+
+        if conversation_examples:
+            best = conversation_examples[0]
+            return (
+                "Je retrouve des exemples proches, mais ils ne correspondent pas assez à l'intention. "
+                f"Meilleur exemple rejeté : {best.prompt[:180]}"
+            )
+
+        if memories:
+            best_memory = memories[0]
+            return (
+                "Je n'ai pas encore appris une réponse directe à ça. "
+                f"Je retrouve surtout ceci : {best_memory.text[:240]}"
+            )
+
         lines = [
             "SDNC interaction cycle complete.",
             f"confidence={activation.confidence:.3f} novelty={activation.novelty:.3f} salience={salience:.3f}",
@@ -1639,6 +1714,167 @@ def _sensory_prototypes_payload(
             if learned_prototype
             else None
         ),
+    }
+
+
+def _conversation_examples_payload(examples: list[ConversationExampleRecord]) -> list[dict[str, Any]]:
+    return [
+        {
+            "id": example.id,
+            "source": example.source,
+            "prompt": example.prompt[:240],
+            "response": example.response[:360],
+            "similarity": round(example.similarity, 4),
+            "confidence": round(example.confidence, 4),
+            "success_rate": round(example.success_rate, 4),
+        }
+        for example in examples
+    ]
+
+
+def _normalized_text(text: str) -> str:
+    return " ".join(re.findall(r"[A-Za-z0-9_]+", text.lower()))
+
+
+def _looks_like_math(text: str) -> bool:
+    lowered = text.lower()
+    if re.search(r"\d+\s*[-+*/%]\s*\d+", text):
+        return True
+    has_two_numbers = len(re.findall(r"\d+(?:[,.]\d+)?", text)) >= 2
+    math_markers = [
+        "calcule",
+        "résous",
+        "resous",
+        "combien",
+        "reste",
+        "donne",
+        "mange",
+        "perd",
+        "retire",
+        "enlève",
+        "enleve",
+        "ajoute",
+        "gagne",
+        "fois",
+        "divise",
+        "somme",
+        "soustra",
+    ]
+    return has_two_numbers and any(marker in lowered for marker in math_markers)
+
+
+def _response_intent(text: str) -> str:
+    lowered = text.lower()
+    if _looks_like_math(text):
+        return "math"
+    if any(
+        marker in lowered
+        for marker in [
+            "traduis",
+            "traduire",
+            "translate",
+            "translation",
+            "en français",
+            "en francais",
+            "en anglais",
+            "en espagnol",
+        ]
+    ):
+        return "translation"
+    if any(marker in lowered for marker in ["convertis", "convertir", "majuscule", "minuscule"]):
+        return "transform"
+    if any(marker in lowered for marker in ["raconte", "histoire", "conte", "roman"]):
+        return "story"
+    if any(marker in lowered for marker in ["conseil", "conseils", "astuce", "astuces"]):
+        return "advice"
+    words = re.findall(r"[A-Za-zÀ-ÿ0-9_]+", lowered)
+    if len(words) <= 8 and any(marker in lowered for marker in ["bonjour", "salut", "coucou", "comment vas"]):
+        return "greeting"
+    return "general"
+
+
+def _conversation_example_is_compatible(
+    user_text: str,
+    example: ConversationExampleRecord,
+) -> bool:
+    user_intent = _response_intent(user_text)
+    example_intent = _response_intent(example.prompt)
+    if _normalized_text(user_text) == _normalized_text(example.prompt):
+        return True
+    if user_intent == "math":
+        return False
+    if user_intent == "greeting":
+        return example_intent == "greeting"
+    if user_intent in {"translation", "transform"}:
+        return example_intent == user_intent and example.similarity >= 0.82
+    if user_intent in {"story", "advice"}:
+        return (
+            example_intent == user_intent
+            and example.similarity >= 0.68
+            and _content_overlap(user_text, example.prompt) >= 0.34
+        )
+    if example_intent != user_intent and example_intent != "general":
+        return False
+    return example.similarity >= 0.72 or _content_overlap(user_text, example.prompt) >= 0.50
+
+
+def _conversation_similarity_threshold(
+    user_text: str,
+    example: ConversationExampleRecord,
+) -> float:
+    intent = _response_intent(user_text)
+    if _normalized_text(user_text) == _normalized_text(example.prompt):
+        return 0.0
+    if intent in {"translation", "transform"}:
+        return 0.88
+    if intent in {"story", "advice"}:
+        return 0.72
+    if intent == "greeting":
+        return 0.62
+    return 0.74
+
+
+def _content_overlap(left: str, right: str) -> float:
+    left_tokens = _content_tokens(left)
+    right_tokens = _content_tokens(right)
+    if not left_tokens or not right_tokens:
+        return 0.0
+    return len(left_tokens & right_tokens) / max(1, len(left_tokens))
+
+
+def _content_tokens(text: str) -> set[str]:
+    stopwords = {
+        "avec",
+        "dans",
+        "pour",
+        "une",
+        "des",
+        "les",
+        "est",
+        "que",
+        "qui",
+        "quoi",
+        "comment",
+        "donne",
+        "donner",
+        "raconte",
+        "histoire",
+        "courte",
+        "conseil",
+        "conseils",
+        "traduis",
+        "traduire",
+        "phrase",
+        "contexte",
+        "apprendre",
+        "parler",
+        "suivant",
+        "suivante",
+    }
+    return {
+        token
+        for token in re.findall(r"[A-Za-zÀ-ÿ0-9_]+", text.lower())
+        if len(token) > 2 and token not in stopwords
     }
 
 

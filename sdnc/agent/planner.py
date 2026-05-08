@@ -241,7 +241,7 @@ class ActionPlanner:
 def _tool_relevance(tool_name: str, text: str) -> float:
     lowered = text.lower()
     if tool_name == "calculator":
-        return 1.0 if re.search(r"\d+\s*[-+*/%]\s*\d+", text) else 0.25
+        return 1.0 if _math_signal(text) else 0.25
     if tool_name == "file_search":
         return 0.82 if any(marker in lowered for marker in ["fichier", "code", "repo", "projet", ".md", ".py"]) else 0.30
     if tool_name == "file_read":
@@ -254,6 +254,31 @@ def _tool_relevance(tool_name: str, text: str) -> float:
 def _question_signal(text: str) -> float:
     lowered = text.lower()
     return 1.0 if "?" in text or any(word in lowered for word in ["pourquoi", "comment", "cherche"]) else 0.0
+
+
+def _math_signal(text: str) -> bool:
+    lowered = text.lower()
+    if re.search(r"\d+\s*[-+*/%]\s*\d+", text):
+        return True
+    has_two_numbers = len(re.findall(r"\d+(?:[,.]\d+)?", text)) >= 2
+    math_markers = [
+        "calcule",
+        "résous",
+        "resous",
+        "combien",
+        "reste",
+        "donne",
+        "mange",
+        "perd",
+        "retire",
+        "ajoute",
+        "gagne",
+        "fois",
+        "divise",
+        "somme",
+        "soustra",
+    ]
+    return has_two_numbers and any(marker in lowered for marker in math_markers)
 
 
 def _clip01(value: float) -> float:

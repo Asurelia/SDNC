@@ -93,3 +93,21 @@ def test_speech_training_runner_ingests_canonical_parquet(tmp_path):
     assert report.records_seen == 2
     assert report.episodes_stored >= 1
     assert len(lines) >= 2
+
+    memory_system = InteractionLearningSystem(
+        AutonomousConfig(
+            input_dim=256,
+            memory_path=tmp_path / "memory.sqlite3",
+            state_path=tmp_path / "state_read.npz",
+            workspace_root=tmp_path,
+            allow_web=False,
+        )
+    )
+    try:
+        matches = memory_system.memory.retrieve_conversation_examples(
+            memory_system.encoder.encode("bonjour"),
+            top_k=1,
+        )
+        assert matches[0].response == "salut, je t'écoute"
+    finally:
+        memory_system.close()

@@ -47,6 +47,25 @@ class IngestionReport:
         }
 
 
+def _conversation_pair_from_record(
+    record: dict[str, Any],
+    text_columns: Iterable[str] | None,
+    label_columns: Iterable[str] | None,
+) -> tuple[str, str] | None:
+    labels = [str(record.get(column) or "").strip() for column in list(label_columns or [])]
+    response = next((label for label in labels if label), "")
+    if not response:
+        return None
+
+    label_set = set(label_columns or [])
+    prompt_columns = [column for column in list(text_columns or []) if column not in label_set]
+    prompt_parts = [str(record.get(column) or "").strip() for column in prompt_columns]
+    prompt = " ".join(part for part in prompt_parts if part)
+    if not prompt or prompt == response:
+        return None
+    return prompt, response
+
+
 class DatasetIngestor:
     """Convert local or Hugging Face rows into SDNC observations."""
 
@@ -94,6 +113,17 @@ class DatasetIngestor:
                     learn=learn,
                     use_tools=False,
                 )
+                pair = _conversation_pair_from_record(record, text_columns, label_columns)
+                if pair is not None:
+                    prompt, response = pair
+                    self.system.memory.upsert_conversation_example(
+                        source=source,
+                        prompt=prompt,
+                        response=response,
+                        embedding=self.system.encoder.encode(prompt),
+                        confidence=0.72,
+                        payload={"dataset_row": index, "kind": "dataset_pair"},
+                    )
                 last_result = result
                 if result.episode_id:
                     episodes_stored += 1

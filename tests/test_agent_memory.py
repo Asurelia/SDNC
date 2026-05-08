@@ -48,6 +48,34 @@ def test_vector_index_refreshes_external_writes(tmp_path):
     reader.close()
 
 
+def test_conversation_examples_retrieve_learned_response(tmp_path):
+    memory = PersistentMemory(tmp_path / "memory.sqlite3", embedding_dim=4)
+    prompt = np.array([1, 0, 0, 0], dtype=np.float32)
+    other = np.array([0, 1, 0, 0], dtype=np.float32)
+    example_id = memory.upsert_conversation_example(
+        source="fixture",
+        prompt="bonjour",
+        response="salut, je t'écoute",
+        embedding=prompt,
+        confidence=0.8,
+    )
+    memory.upsert_conversation_example(
+        source="fixture",
+        prompt="bonne nuit",
+        response="dors bien",
+        embedding=other,
+        confidence=0.8,
+    )
+
+    matches = memory.retrieve_conversation_examples(prompt, top_k=1)
+
+    assert matches[0].id == example_id
+    assert matches[0].response == "salut, je t'écoute"
+    assert matches[0].similarity > 0.99
+    assert memory.vector_index_summary()["conversation_examples"] == 2
+    memory.close()
+
+
 def test_procedural_memory_retrieves_similar_tool_pattern(tmp_path):
     memory = PersistentMemory(tmp_path / "memory.sqlite3", embedding_dim=4)
     emb = np.array([1, 0, 0, 0], dtype=np.float32)

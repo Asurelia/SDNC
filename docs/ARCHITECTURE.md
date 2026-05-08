@@ -76,15 +76,22 @@ does not replace the specialized circuits.
   and sparse inter-circuit weights. It activates at most 5 percent of circuits.
   State checkpoints are saved by atomic replace and partial reads are ignored so
   the web UI can start while another process is checkpointing.
-- `PersistentMemory`: SQLite episodic and procedural memory. Episodes store
-  embeddings, active circuits, salience, and feedback. Procedures store learned
+- `PersistentMemory`: SQLite episodic, procedural, and conversation-example
+  memory. Episodes store embeddings, active circuits, salience, and feedback.
+  Conversation examples store source-backed prompt/response pairs learned from
+  datasets or direct interaction. These examples are retrieval evidence, not a
+  single source of truth: response synthesis filters them through lightweight
+  intent compatibility before using a learned answer. Procedures store learned
   tool-use patterns. The connection runs in WAL mode with local indexes for
   concurrent UI reads and learning writes. At runtime, it also maintains a
-  RAM-side dense vector index over episodes, sensory bindings, sensory
-  prototypes, procedures, rules, and experts so large ingestion runs do not
-  rescan every prototype row on each observation. Long-lived readers incrementally
-  refresh this RAM index from SQLite watermarks when another process writes to
-  the same local database.
+  RAM-side dense vector index over episodes, conversation examples, sensory
+  bindings, sensory prototypes, procedures, rules, and experts so large
+  ingestion runs do not rescan every SQLite row on each observation. The hot
+  index keeps only vectors and small ranking metadata; full text, responses,
+  context JSON, and sensory payloads stay cold in SQLite until the top
+  candidates are fetched. Long-lived readers incrementally refresh this RAM
+  index from SQLite watermarks when another process writes to the same local
+  database.
 - `ToolRegistry`: real tools for memory recall, web search, workspace file
   search/read, and arithmetic experiments.
 - `InteractionLearningSystem`: orchestrates the loop and persists state.
@@ -98,8 +105,10 @@ does not replace the specialized circuits.
   modality list, signal reliabilities, binding score, and a fused embedding.
 - `DatasetIngestor`: streams local or Hugging Face rows as experiences.
   Local `.parquet` training files are recognized as datasets when Polars is
-  installed; rows such as `source`/`target` become sensory text experiences and
-  ingestion reports are attached to the visible interaction result.
+  installed; rows such as `source`/`target` become sensory text experiences,
+  and prompt/label pairs are also stored as conversation examples for later
+  response synthesis. Ingestion reports are attached to the visible interaction
+  result.
 - `speech_training`: local CLI runner for large French conversation corpora. It
   ingests canonical `source`/`target` parquet files into the same memory/circuit
   loop and writes JSONL progress checkpoints outside the browser.
@@ -130,6 +139,24 @@ The interaction layer avoids global backpropagation. For each observation:
 
 Inactive circuits are untouched. Negative feedback weakens the current
 association instead of changing the whole model.
+
+## Conversation Use
+
+SDNC can now reuse learned prompt/response pairs, but only after a small
+cognitive gate:
+
+```text
+user text -> embedding recall -> candidate examples
+          -> intent compatibility
+          -> required tool override when applicable
+          -> answer or explicit uncertainty
+```
+
+This prevents a near vector match from becoming a false answer. For example,
+an example that says "translate Bonjour into Spanish" can be retrieved for a
+simple greeting, but it is rejected because its intent is translation, not
+greeting. Natural arithmetic similarly forces the calculator tool even when a
+near episodic memory or conversation example looks confident.
 
 ## Efficiency Path
 
